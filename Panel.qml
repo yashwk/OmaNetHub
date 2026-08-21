@@ -18,7 +18,7 @@ Panel {
   readonly property color foreground: bar ? bar.barForeground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property color dimColor: Qt.darker(foreground, 1.4)
-  readonly property string scriptDir: "/home/yashwanth/.config/omarchy/plugins/yashwanth.link"
+  readonly property string scriptDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/yashwanth.link"
 
   // Active view tab: "tailnet" | "network" | "firewall"
   property string currentTab: "network"

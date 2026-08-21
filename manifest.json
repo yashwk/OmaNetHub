@@ -2,8 +2,9 @@
   "schemaVersion": 1,
   "id": "yashwanth.link",
   "name": "OmaNetHub",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "author": "Yashwanth",
+  "license": "MIT",
   "description": "Unified Network Hub for Wi-Fi, Tailscale and Firewall",
   "kinds": [
     "bar-widget"
