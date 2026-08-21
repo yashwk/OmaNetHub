@@ -16,15 +16,9 @@ omarchy plugin add https://github.com/yashwanth/omarchy-network-hub.git
 
 *(Note: Replace the URL above with your actual repository URL once published!)*
 
-### Nautilus Integration (Optional)
+### Nautilus Integration
 
-To enable the "Send via Taildrop" option in your file manager (Nautilus):
-
-```bash
-mkdir -p ~/.local/share/nautilus-python/extensions
-cp ~/.config/omarchy/plugins/yashwanth.link/nautilus-extension/taildrop.py ~/.local/share/nautilus-python/extensions/
-nautilus -q
-```
+The "Send via Taildrop" option is **automatically integrated** into your GNOME Files (Nautilus) right-click context menu when the plugin first loads! There is no manual setup required.
 
 ## Drag & Drop
 

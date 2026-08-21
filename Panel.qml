@@ -125,7 +125,10 @@ Panel {
     onExited: root.refresh()
   }
 
-  Component.onCompleted: refresh()
+  Component.onCompleted: {
+    refresh()
+    Quickshell.execDetached([root.scriptDir + "/action.sh", "install-nautilus"])
+  }
 
   property bool panelReady: false
 
