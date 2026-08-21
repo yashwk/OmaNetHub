@@ -26,7 +26,14 @@ else
 fi
 
 if [ -n "$TARGET_NAME" ]; then
-  TARGET_IP=$(echo "$MAPPING" | grep -m1 "^$TARGET_NAME|" | cut -d'|' -f2)
+  TARGET_IP=""
+  while IFS='|' read -r name ip; do
+    if [ "$name" = "$TARGET_NAME" ]; then
+      TARGET_IP="$ip"
+      break
+    fi
+  done <<< "$MAPPING"
+
   if [ -n "$TARGET_IP" ]; then
     "$(dirname "$0")/taildrop-direct-send" "$TARGET_IP" "$TARGET_NAME" "$@"
   fi

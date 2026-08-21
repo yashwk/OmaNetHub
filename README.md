@@ -51,9 +51,11 @@ Combines Wi-Fi controls, DNS/band management, signal & latency diagnostics, Tail
 - Open a port: port number + TCP/UDP chip, with quick presets (22, 80, 3000, 5173, 8080)
 - View verbose status in floating terminal (`sudo ufw status verbose`)
 
-### Nautilus Integration
+### Nautilus Integration (Optional)
 - **Send via Taildrop** context menu for GNOME Files (Nautilus). Right-click any file(s) → Send via Taildrop → choose online peer.
-- Auto-installed on panel open via `nautilus-python` extension to `~/.local/share/nautilus-python/extensions/taildrop.py` (requires `nautilus -q` to reload).
+- Explicit installation & removal scripts provided in `bin/`:
+  - **Install**: `~/.config/omarchy/plugins/yashwanth.link/bin/install-nautilus-extension`
+  - **Uninstall**: `~/.config/omarchy/plugins/yashwanth.link/bin/uninstall-nautilus-extension`
 
 ## Installation
 
@@ -100,12 +102,19 @@ The widget shows signal/network state (`󰤨` / `󰤥` / `󰤟` / `󰈀` for wir
 
 Behind the scenes, sends use `tailscale file cp` via `bin/taildrop-direct-send` and `bin/taildrop-menu-send` (with `omarchy-file-select` / `omarchy-menu-select` helpers).
 
-### Nautilus
-After first open, the extension is copied if changed. Restart Nautilus if the menu does not appear:
+### Nautilus Context Menu
+To install or remove the "Send via Taildrop" right-click extension in Nautilus:
 
-```bash
-nautilus -q
-```
+- Install:
+  ```bash
+  ~/.config/omarchy/plugins/yashwanth.link/bin/install-nautilus-extension
+  nautilus -q
+  ```
+- Remove:
+  ```bash
+  ~/.config/omarchy/plugins/yashwanth.link/bin/uninstall-nautilus-extension
+  nautilus -q
+  ```
 
 ## Requirements
 

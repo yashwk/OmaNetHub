@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+EXT_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/nautilus-python/extensions/taildrop.py"
+
+if [ -f "$EXT_FILE" ]; then
+  rm -f "$EXT_FILE"
+  echo "Taildrop Nautilus extension removed from $EXT_FILE"
+  echo "To apply changes to running file manager instances, restart Nautilus using: nautilus -q"
+else
+  echo "Taildrop Nautilus extension is not installed at $EXT_FILE"
+fi

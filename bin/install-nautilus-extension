@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+EXT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nautilus-python/extensions"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC_PY="$SCRIPT_DIR/nautilus-extension/taildrop.py"
+
+if [ ! -f "$SRC_PY" ]; then
+  echo "Error: Source extension not found at $SRC_PY" >&2
+  exit 1
+fi
+
+mkdir -p "$EXT_DIR"
+cp "$SRC_PY" "$EXT_DIR/taildrop.py"
+chmod 644 "$EXT_DIR/taildrop.py"
+
+echo "Taildrop Nautilus extension successfully installed to $EXT_DIR/taildrop.py"
+echo "To activate in running file manager instances, restart Nautilus using: nautilus -q"

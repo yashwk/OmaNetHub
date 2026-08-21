@@ -1,5 +1,7 @@
-// Parsers and formatters for the Network Hub status stream.
-// Each status.sh run emits lines: key<TAB>fields...
+function sanitizeText(str) {
+  if (str === null || str === undefined) return ""
+  return String(str).replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim()
+}
 
 function parseStatus(text, root) {
   var tailscaleUp = false
@@ -39,15 +41,15 @@ function parseStatus(text, root) {
     if (parts[0] === "ts" && parts.length >= 4) {
       tailscaleUp = parts[1] === "1"
       tailscalePeers = parseInt(parts[2], 10) || 0
-      selfHost = parts[3] || "localhost"
-      if (parts.length >= 5) selfIp = parts[4]
-      if (parts.length >= 6) selfOS = parts[5]
+      selfHost = sanitizeText(parts[3] || "localhost")
+      if (parts.length >= 5) selfIp = sanitizeText(parts[4])
+      if (parts.length >= 6) selfOS = sanitizeText(parts[5])
     } else if (parts[0] === "peer" && parts.length >= 4) {
-      var pHName = parts[1]
-      var pPip = parts[2]
-      var pOs = (parts.length >= 4 && parts[3]) ? parts[3].toLowerCase() : "linux"
+      var pHName = sanitizeText(parts[1])
+      var pPip = sanitizeText(parts[2])
+      var pOs = (parts.length >= 4 && parts[3]) ? sanitizeText(parts[3].toLowerCase()) : "linux"
       var pOnline = (parts.length >= 5) ? (parts[4] === "1" || parts[4] === "true") : true
-      var pDns = (parts.length >= 6) ? parts[5] : ""
+      var pDns = (parts.length >= 6) ? sanitizeText(parts[5]) : ""
       peers.push({
         host: pHName,
         ip: pPip,
@@ -57,39 +59,39 @@ function parseStatus(text, root) {
         target: pDns !== "" ? pDns : (pPip !== "" ? pPip : pHName)
       })
     } else if (parts[0] === "net" && parts.length >= 6) {
-      ssid = parts[1]
-      netType = parts[2]
-      netIp = parts[3]
+      ssid = sanitizeText(parts[1])
+      netType = sanitizeText(parts[2])
+      netIp = sanitizeText(parts[3])
       signal = parseInt(parts[4], 10) || -1
       metered = parts[5] === "1"
-      if (parts.length >= 7) gateway = parts[6]
+      if (parts.length >= 7) gateway = sanitizeText(parts[6])
       if (parts.length >= 8) wifiRadio = parts[7] === "1"
-      if (parts.length >= 9) netIface = parts[8]
-      if (parts.length >= 10) netFreq = parts[9]
+      if (parts.length >= 9) netIface = sanitizeText(parts[8])
+      if (parts.length >= 10) netFreq = sanitizeText(parts[9])
     } else if (parts[0] === "netdiag" && parts.length >= 2) {
-      netBitrate = parts[1] || ""
-      if (parts.length >= 3) routerPing = parts[2] || ""
-      if (parts.length >= 4) internetPing = parts[3] || ""
-      if (parts.length >= 5) signalDbm = parts[4] || ""
+      netBitrate = sanitizeText(parts[1] || "")
+      if (parts.length >= 3) routerPing = sanitizeText(parts[2] || "")
+      if (parts.length >= 4) internetPing = sanitizeText(parts[3] || "")
+      if (parts.length >= 5) signalDbm = sanitizeText(parts[4] || "")
     } else if (parts[0] === "netband" && parts.length >= 2) {
-      bandCurrent = parts[1] || ""
-      if (parts.length >= 3) bandSelected = parts[2] || ""
-      if (parts.length >= 4) bandAvailable = parts[3] || ""
+      bandCurrent = sanitizeText(parts[1] || "")
+      if (parts.length >= 3) bandSelected = sanitizeText(parts[2] || "")
+      if (parts.length >= 4) bandAvailable = sanitizeText(parts[3] || "")
     } else if (parts[0] === "netdns" && parts.length >= 2) {
-      dnsCurrent = parts[1] || ""
+      dnsCurrent = sanitizeText(parts[1] || "")
     } else if (parts[0] === "data" && parts.length >= 4) {
-      dataRx = parts[1]
-      dataTx = parts[2]
-      dataSource = parts[3]
+      dataRx = sanitizeText(parts[1])
+      dataTx = sanitizeText(parts[2])
+      dataSource = sanitizeText(parts[3])
     } else if (parts[0] === "fw" && parts.length >= 3) {
       fwActive = parts[1] === "1"
       fwRules = parseInt(parts[2], 10) || 0
     } else if (parts[0] === "fwrule" && parts.length >= 4) {
-      var action = parts[1]
-      var proto = parts[2]
-      var port = parts[3]
-      var src = (parts.length >= 5) ? parts[4] : ""
-      var comment = (parts.length >= 6) ? parts[5] : ""
+      var action = sanitizeText(parts[1])
+      var proto = sanitizeText(parts[2])
+      var port = sanitizeText(parts[3])
+      var src = (parts.length >= 5) ? sanitizeText(parts[4]) : ""
+      var comment = (parts.length >= 6) ? sanitizeText(parts[5]) : ""
       var ruleKey = port + "/" + proto + ":" + src
       if (!seenRules[ruleKey] && port && port !== "any") {
         seenRules[ruleKey] = true

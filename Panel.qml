@@ -125,10 +125,7 @@ Panel {
     onExited: root.refresh()
   }
 
-  Component.onCompleted: {
-    refresh()
-    Quickshell.execDetached([root.scriptDir + "/action.sh", "install-nautilus"])
-  }
+  Component.onCompleted: refresh()
 
   property bool panelReady: false
 
@@ -259,6 +256,7 @@ Panel {
           iconComponent: Component {
             Text {
               text: Model.signalIcon(root.signal, root.netType)
+              textFormat: Text.PlainText
               color: root.signal >= 0 || root.tailscaleUp ? Color.accent : root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
@@ -338,6 +336,7 @@ Panel {
 
                   Text {
                     text: Model.signalIcon(root.signal, root.netType)
+                    textFormat: Text.PlainText
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.title
                     color: Color.accent
@@ -350,6 +349,7 @@ Panel {
 
                     Text {
                       text: root.ssid !== "" ? root.ssid : Model.typeLabel(root.netType)
+                      textFormat: Text.PlainText
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
                       font.bold: true
@@ -357,6 +357,7 @@ Panel {
                     }
                     Text {
                       text: root.netType === "wifi" ? Model.formatBand(root.netFreq, root.netIface) : (root.netIface !== "" ? root.netIface : "Connected")
+                      textFormat: Text.PlainText
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                       color: root.dimColor
@@ -448,6 +449,7 @@ Panel {
 
                 Text {
                   text: "Wi-Fi Band"
+                  textFormat: Text.PlainText
                   color: root.dimColor
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -476,6 +478,7 @@ Panel {
 
                 Text {
                   text: "DNS Provider"
+                  textFormat: Text.PlainText
                   color: root.dimColor
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -525,12 +528,14 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   Text {
                     text: "󰇚"
+                    textFormat: Text.PlainText
                     color: Color.accent
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
                   }
                   Text {
                     text: "Down: " + (root.dataRx !== "" ? root.dataRx : "—")
+                    textFormat: Text.PlainText
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -543,12 +548,14 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   Text {
                     text: "󰕒"
+                    textFormat: Text.PlainText
                     color: Color.accent
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
                   }
                   Text {
                     text: "Up: " + (root.dataTx !== "" ? root.dataTx : "—")
+                    textFormat: Text.PlainText
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -558,6 +565,7 @@ Panel {
 
                 Text {
                   text: "(Today · " + (root.dataSource || "vnstat") + ")"
+                  textFormat: Text.PlainText
                   color: root.dimColor
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -600,6 +608,7 @@ Panel {
 
                 Text {
                   text: Model.osIcon(root.selfOS)
+                  textFormat: Text.PlainText
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.title
                   color: root.tailscaleUp ? Color.accent : root.dimColor
@@ -614,6 +623,7 @@ Panel {
                     spacing: Style.space(6)
                     Text {
                       text: root.selfHost + " (This Device)"
+                      textFormat: Text.PlainText
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
                       font.bold: true
@@ -630,6 +640,7 @@ Panel {
 
                   Text {
                     text: root.selfIp !== "" ? root.selfIp : "Tailscale not connected"
+                    textFormat: Text.PlainText
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     color: root.dimColor
@@ -671,6 +682,7 @@ Panel {
             Text {
               id: peersHeaderLabel
               text: "PEERS (" + root.peers.length + ")"
+              textFormat: Text.PlainText
               color: Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -760,6 +772,7 @@ Panel {
 
                     Text {
                       text: Model.osIcon(modelData.os)
+                      textFormat: Text.PlainText
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.title
                       color: modelData.online ? Color.accent : root.dimColor
@@ -774,6 +787,7 @@ Panel {
                         spacing: Style.space(5)
                         Text {
                           text: modelData.host
+                          textFormat: Text.PlainText
                           color: root.foreground
                           font.family: root.fontFamily
                           font.pixelSize: Style.font.bodySmall
@@ -790,6 +804,7 @@ Panel {
 
                       Text {
                         text: modelData.ip !== "" ? modelData.ip : "Offline"
+                        textFormat: Text.PlainText
                         color: root.dimColor
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
@@ -864,6 +879,7 @@ Panel {
           Text {
             visible: root.peers.length === 0
             text: root.tailscaleUp ? "No peer devices connected on tailnet." : "Connect Tailscale to view and share with peers."
+            textFormat: Text.PlainText
             color: root.dimColor
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -904,6 +920,7 @@ Panel {
 
                 Text {
                   text: root.fwActive ? "󰒃" : "󰒄"
+                  textFormat: Text.PlainText
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.title
                   color: root.fwActive ? Color.accent : root.dimColor
@@ -916,6 +933,7 @@ Panel {
 
                   Text {
                     text: root.fwActive ? "UFW Firewall Active" : "UFW Firewall Inactive"
+                    textFormat: Text.PlainText
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
                     font.bold: true
@@ -924,6 +942,7 @@ Panel {
 
                   Text {
                     text: root.fwRules + " active user rules"
+                    textFormat: Text.PlainText
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     color: root.dimColor
@@ -958,6 +977,7 @@ Panel {
           // Open Ports / Rules List Header
           Text {
             text: "ALLOWED INCOMING RULES (" + root.fwRuleList.length + ")"
+            textFormat: Text.PlainText
             color: Color.accent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -996,6 +1016,7 @@ Panel {
 
                     Text {
                       text: "󰄬"
+                      textFormat: Text.PlainText
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
                       color: "#55dd77"
@@ -1010,6 +1031,7 @@ Panel {
                         spacing: Style.space(6)
                         Text {
                           text: "Port " + modelData.port + " (" + modelData.proto + ")"
+                          textFormat: Text.PlainText
                           color: root.foreground
                           font.family: root.fontFamily
                           font.pixelSize: Style.font.bodySmall
@@ -1019,6 +1041,7 @@ Panel {
 
                       Text {
                         text: (modelData.comment !== "" ? modelData.comment + " · " : "") + "From: " + modelData.src
+                        textFormat: Text.PlainText
                         color: root.dimColor
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
@@ -1044,6 +1067,7 @@ Panel {
           Text {
             visible: root.fwRuleList.length === 0
             text: "No custom user port rules currently defined."
+            textFormat: Text.PlainText
             color: root.dimColor
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -1054,6 +1078,7 @@ Panel {
           // Add / Open Port Controls
           Text {
             text: "OPEN A PORT"
+            textFormat: Text.PlainText
             color: Color.accent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -1173,6 +1198,7 @@ Panel {
 
           Text {
             text: "󰒊"
+            textFormat: Text.PlainText
             font.family: root.fontFamily
             font.pixelSize: Style.font.display * 2
             color: Color.accent
@@ -1180,6 +1206,7 @@ Panel {
           }
           Text {
             text: "Drop here to send"
+            textFormat: Text.PlainText
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
             font.bold: true
@@ -1196,6 +1223,7 @@ Panel {
 
           Text {
             text: "Select device to send to"
+            textFormat: Text.PlainText
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             color: root.dimColor
@@ -1249,6 +1277,7 @@ Panel {
       Text {
         visible: !rootFlatTab.useTailscaleIcon
         text: rootFlatTab.icon
+        textFormat: Text.PlainText
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         color: rootFlatTab.selected ? Color.accent : root.foreground
@@ -1264,6 +1293,7 @@ Panel {
 
       Text {
         text: rootFlatTab.label
+        textFormat: Text.PlainText
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         font.bold: rootFlatTab.selected
@@ -1274,6 +1304,7 @@ Panel {
       Text {
         visible: rootFlatTab.badge !== ""
         text: rootFlatTab.badge
+        textFormat: Text.PlainText
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: rootFlatTab.selected
@@ -1319,6 +1350,7 @@ Panel {
       id: chipLabel
       anchors.centerIn: parent
       text: rootChip.label
+      textFormat: Text.PlainText
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: rootChip.active
@@ -1349,6 +1381,7 @@ Panel {
 
       Text {
         text: rootActionBtn.icon
+        textFormat: Text.PlainText
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         color: Color.accent
@@ -1357,6 +1390,7 @@ Panel {
 
       Text {
         text: rootActionBtn.label
+        textFormat: Text.PlainText
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         color: root.foreground
@@ -1389,6 +1423,7 @@ Panel {
       id: presetLabel
       anchors.centerIn: parent
       text: rootPresetPill.label
+      textFormat: Text.PlainText
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       color: root.foreground
@@ -1418,6 +1453,7 @@ Panel {
 
     Text {
       text: rootInfoRow.label
+      textFormat: Text.PlainText
       color: root.dimColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -1432,6 +1468,7 @@ Panel {
 
       Text {
         text: rootInfoRow.value
+        textFormat: Text.PlainText
         color: infoRowMouse.containsMouse && rootInfoRow.copyable ? Color.accent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -1441,6 +1478,7 @@ Panel {
       Text {
         visible: rootInfoRow.copyable
         text: "󰆏"
+        textFormat: Text.PlainText
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         opacity: infoRowMouse.containsMouse ? 1.0 : 0.4
@@ -1483,8 +1521,8 @@ Panel {
       anchors.left: parent.left
       anchors.leftMargin: Style.space(12)
       spacing: Style.space(10)
-      Text { text: copyChoice.icon; color: root.dimColor; font.family: root.fontFamily; anchors.verticalCenter: parent.verticalCenter }
-      Text { text: copyChoice.label; color: root.foreground; font.family: root.fontFamily; anchors.verticalCenter: parent.verticalCenter }
+      Text { text: copyChoice.icon; textFormat: Text.PlainText; color: root.dimColor; font.family: root.fontFamily; anchors.verticalCenter: parent.verticalCenter }
+      Text { text: copyChoice.label; textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; anchors.verticalCenter: parent.verticalCenter }
     }
   }
 

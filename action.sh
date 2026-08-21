@@ -97,12 +97,9 @@ case "$verb" in
     sudo ufw delete allow "$rule" >/dev/null 2>&1 && notify "Port $rule closed" || fail "Port $rule not closed (sudo needed)"
     ;;
   install-nautilus)
-    EXT_DIR="$HOME/.local/share/nautilus-python/extensions"
-    SRC_PY="$(dirname "$0")/nautilus-extension/taildrop.py"
-    if [ ! -f "$EXT_DIR/taildrop.py" ] || ! cmp -s "$SRC_PY" "$EXT_DIR/taildrop.py"; then
-      mkdir -p "$EXT_DIR"
-      cp "$SRC_PY" "$EXT_DIR/"
-      nautilus -q || true
-    fi
+    "$(dirname "$0")/bin/install-nautilus-extension" && notify "Taildrop Nautilus extension installed" || fail "Failed to install Nautilus extension"
+    ;;
+  uninstall-nautilus)
+    "$(dirname "$0")/bin/uninstall-nautilus-extension" && notify "Taildrop Nautilus extension removed" || fail "Failed to remove Nautilus extension"
     ;;
 esac
