@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "id": "yashwanth.link",
-  "name": "Network Hub",
+  "name": "OmaNetHub",
   "version": "1.1.0",
   "author": "Yashwanth",
-  "description": "Tailnet, network and firewall hub",
+  "description": "Unified Network Hub for Wi-Fi, Tailscale and Firewall",
   "kinds": [
     "bar-widget"
   ],
@@ -12,7 +12,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Network Hub",
+    "displayName": "OmaNetHub",
     "description": "Tailnet (Tailscale), network context and firewall in one panel",
     "category": "Network",
     "allowMultiple": false
