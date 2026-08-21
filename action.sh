@@ -73,6 +73,9 @@ case "$verb" in
       omarchy-dns "$provider" >/dev/null 2>&1 && notify "DNS set to $provider" || fail "Failed to set DNS"
     fi
     ;;
+  fw-status)
+    omarchy-launch-floating-terminal-with-presentation "sudo ufw status verbose" &
+    ;;
   fw-enable)
     sudo ufw enable >/dev/null 2>&1 && notify "Firewall enabled" || fail "Failed to enable firewall"
     ;;

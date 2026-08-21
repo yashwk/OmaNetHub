@@ -20,7 +20,8 @@ human() {
 decode_hex() {
   local hex="$1"
   if [[ -n "$hex" && "$hex" =~ ^[0-9a-fA-F]+$ ]]; then
-    printf "%s" "$hex" | xxd -r -p 2>/dev/null || echo "$hex"
+    local escaped=$(echo "$hex" | sed 's/../\\x&/g')
+    echo -e "$escaped"
   else
     echo "$hex"
   fi

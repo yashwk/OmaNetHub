@@ -264,12 +264,6 @@ Panel {
               font.pixelSize: Style.font.display
             }
           }
-          trailingControl: Component {
-            ToggleSwitch {
-              checked: root.tailscaleUp
-              onToggled: root.runAction([root.tailscaleUp ? "ts-down" : "ts-up"])
-            }
-          }
         }
 
         // ---------- Flat Segmented Tab Bar ----------
@@ -594,12 +588,12 @@ Panel {
               id: selfCol
               anchors.fill: parent
               anchors.margins: Style.space(10)
-              implicitHeight: Math.max(selfLeftRow.implicitHeight, selfActionBtn.implicitHeight)
+              implicitHeight: Math.max(selfLeftRow.implicitHeight, selfActionRow.implicitHeight)
 
               Row {
                 id: selfLeftRow
                 anchors.left: parent.left
-                anchors.right: selfActionBtn.left
+                anchors.right: selfActionRow.left
                 anchors.rightMargin: Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(8)
@@ -643,16 +637,28 @@ Panel {
                 }
               }
 
-              PanelActionButton {
-                id: selfActionBtn
-                visible: root.selfIp !== ""
-                iconText: "󰆏"
-                tooltipText: "Copy Tailscale IP"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
+              Row {
+                id: selfActionRow
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.copyToClipboard(root.selfIp, "Tailscale IP")
+                spacing: Style.space(6)
+
+                PanelActionButton {
+                  id: selfActionBtn
+                  visible: root.selfIp !== ""
+                  iconText: "󰆏"
+                  tooltipText: "Copy Tailscale IP"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  anchors.verticalCenter: parent.verticalCenter
+                  onClicked: root.copyToClipboard(root.selfIp, "Tailscale IP")
+                }
+
+                ToggleSwitch {
+                  checked: root.tailscaleUp
+                  anchors.verticalCenter: parent.verticalCenter
+                  onToggled: root.runAction([root.tailscaleUp ? "ts-down" : "ts-up"])
+                }
               }
             }
           }
@@ -913,7 +919,7 @@ Panel {
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
                     font.bold: true
-                    color: root.foreground
+                    color: root.fwActive ? "#55dd77" : root.foreground
                   }
 
                   Text {
@@ -937,7 +943,7 @@ Panel {
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   anchors.verticalCenter: parent.verticalCenter
-                  onClicked: if (root.bar) root.bar.run("alacritty -e 'sudo ufw status verbose'")
+                  onClicked: root.runAction(["fw-status"])
                 }
 
                 ToggleSwitch {
@@ -1022,7 +1028,7 @@ Panel {
 
                   PanelActionButton {
                     id: ruleDeleteBtn
-                    iconText: "󰍴"
+                    iconText: "󰅖"
                     tooltipText: "Close port " + modelData.port + "/" + modelData.proto.toLowerCase()
                     foreground: "#ff5555"
                     fontFamily: root.fontFamily
