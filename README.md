@@ -1,4 +1,4 @@
-# Omarchy Network Hub (`yashwanth.link`)
+# Omarchy Network Hub 
 
 A comprehensive, unified Network, Tailscale, and Firewall management plugin for Omarchy.
 
@@ -13,12 +13,11 @@ A comprehensive, unified Network, Tailscale, and Firewall management plugin for 
 ```bash
 omarchy plugin add https://github.com/yashwk/OmaNetHub.git
 ```
-
-*(Note: Replace the URL above with your actual repository URL once published!)*
+```
 
 ### Nautilus Integration
 
-The "Send via Taildrop" option is **automatically integrated** into your GNOME Files (Nautilus) right-click context menu when the plugin first loads! There is no manual setup required.
+The "Send via Taildrop" option is automatically integrated into your GNOME Files (Nautilus) context menu.
 
 ## Drag & Drop
 
