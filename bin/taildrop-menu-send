@@ -1,0 +1,33 @@
+#!/bin/bash
+
+if [ $# -eq 0 ]; then
+  exit 0
+fi
+
+MAPPING=$(tailscale status --json | jq -r '.Peer | to_entries[] | select(.value.Online == true) | "\(.value.HostName)|\(.value.TailscaleIPs[0])"' 2>/dev/null)
+
+if [ -z "$MAPPING" ]; then
+  omarchy notification send "Taildrop" "No online peers found" -u normal -g 󰒊 2>/dev/null
+  exit 1
+fi
+
+OPTIONS=()
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  name="${line%%|*}"
+  OPTIONS+=("$name")
+done <<< "$MAPPING"
+
+TARGET_NAME=""
+if [ ${#OPTIONS[@]} -eq 1 ]; then
+  TARGET_NAME="${OPTIONS[0]}"
+else
+  TARGET_NAME=$(omarchy-menu-select "Send to..." "${OPTIONS[@]}" || true)
+fi
+
+if [ -n "$TARGET_NAME" ]; then
+  TARGET_IP=$(echo "$MAPPING" | grep -m1 "^$TARGET_NAME|" | cut -d'|' -f2)
+  if [ -n "$TARGET_IP" ]; then
+    "$(dirname "$0")/taildrop-direct-send" "$TARGET_IP" "$TARGET_NAME" "$@"
+  fi
+fi

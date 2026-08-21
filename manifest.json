@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "yashwanth.link",
+  "name": "Network Hub",
+  "version": "1.1.0",
+  "author": "Yashwanth",
+  "description": "Tailnet, network and firewall hub",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Network Hub",
+    "description": "Tailnet (Tailscale), network context and firewall in one panel",
+    "category": "Network",
+    "allowMultiple": false
+  }
+}

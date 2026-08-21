@@ -1,0 +1,29 @@
+#!/bin/bash
+TARGET_IP="$1"
+TARGET_NAME="$2"
+shift 2
+
+files=("$@")
+
+if ((${#files[@]} == 0)); then
+  picked=$(omarchy-file-select --title "Send to $TARGET_NAME" --multiple) || status=$?
+  if ((${status:-0} > 1)); then
+    omarchy notification send "Taildrop" "Could not send to $TARGET_NAME\nThe file chooser did not open" -u critical -g "󰒊" 2>/dev/null
+    exit 1
+  fi
+  readarray -t files <<<"$picked"
+  [[ -n $picked ]] || exit 0
+fi
+
+if ((${#files[@]} == 1)); then
+  what=$(basename "${files[0]}")
+else
+  what="${#files[@]} files"
+fi
+
+if error=$(tailscale file cp --update-interval=0 -- "${files[@]}" "$TARGET_IP:" 2>&1); then
+  omarchy notification send "Taildrop" "Sent to $TARGET_NAME\n$what" -g "󰒊" 2>/dev/null
+else
+  omarchy notification send "Taildrop" "Could not send to $TARGET_NAME\n${error:-Transfer failed}" -u critical -g "󰒊" 2>/dev/null
+  exit 1
+fi
