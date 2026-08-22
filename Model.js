@@ -39,7 +39,8 @@ function parseStatus(text, root) {
   var fwRuleList = []
   var seenRules = {}
 
-  var lines = String(text || "").split("\n")
+  var safeText = String(text || "").substring(0, 16384)
+  var lines = safeText.split("\n").slice(0, 100)
   for (var i = 0; i < lines.length; i++) {
     var parts = lines[i].split("\t")
     if (parts[0] === "ts" && parts.length >= 4) {
