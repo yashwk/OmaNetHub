@@ -9,7 +9,8 @@ from gi.repository import GObject, Gio, Nautilus
 
 class SendViaTaildropAction(GObject.GObject, Nautilus.MenuProvider):
     def _launch_taildrop(self, paths):
-        script_path = os.path.expanduser("~/.config/omarchy/plugins/yashwanth.link/bin/taildrop-menu-send")
+        config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        script_path = os.path.join(config_home, "omarchy/plugins/yashwanth.link/bin/taildrop-menu-send")
         if not os.path.exists(script_path):
             return
         command = [script_path] + paths

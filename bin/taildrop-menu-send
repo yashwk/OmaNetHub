@@ -4,7 +4,7 @@ if [ $# -eq 0 ]; then
   exit 0
 fi
 
-MAPPING=$(tailscale status --json | jq -r '.Peer | to_entries[] | select(.value.Online == true) | "\(.value.HostName)|\(.value.TailscaleIPs[0])"' 2>/dev/null)
+MAPPING=$(tailscale status --json 2>/dev/null | jq -r '.Peer // {} | to_entries[] | select(.value.Online == true) | "\(.value.HostName) (\(.value.TailscaleIPs[0]))|\(.value.TailscaleIPs[0])|\(.value.HostName)"' 2>/dev/null)
 
 if [ -z "$MAPPING" ]; then
   omarchy notification send "Taildrop" "No online peers found" -u normal -g 󰒊 2>/dev/null
@@ -12,24 +12,25 @@ if [ -z "$MAPPING" ]; then
 fi
 
 OPTIONS=()
-while IFS= read -r line; do
-  [ -z "$line" ] && continue
-  name="${line%%|*}"
-  OPTIONS+=("$name")
+while IFS='|' read -r label ip host; do
+  [ -z "$label" ] && continue
+  OPTIONS+=("$label")
 done <<< "$MAPPING"
 
-TARGET_NAME=""
+TARGET_LABEL=""
 if [ ${#OPTIONS[@]} -eq 1 ]; then
-  TARGET_NAME="${OPTIONS[0]}"
+  TARGET_LABEL="${OPTIONS[0]}"
 else
-  TARGET_NAME=$(omarchy-menu-select "Send to..." "${OPTIONS[@]}" || true)
+  TARGET_LABEL=$(omarchy-menu-select "Send to..." "${OPTIONS[@]}" || true)
 fi
 
-if [ -n "$TARGET_NAME" ]; then
+if [ -n "$TARGET_LABEL" ]; then
   TARGET_IP=""
-  while IFS='|' read -r name ip; do
-    if [ "$name" = "$TARGET_NAME" ]; then
+  TARGET_NAME=""
+  while IFS='|' read -r label ip host; do
+    if [ "$label" = "$TARGET_LABEL" ]; then
       TARGET_IP="$ip"
+      TARGET_NAME="$host"
       break
     fi
   done <<< "$MAPPING"

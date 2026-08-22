@@ -144,7 +144,7 @@ Panel {
   }
 
   Timer {
-    interval: 3000
+    interval: root.opened ? 3000 : 10000
     running: true
     repeat: true
     onTriggered: root.refresh()
@@ -864,7 +864,7 @@ Panel {
 
                     PanelActionButton {
                       iconText: "󰒊"
-                      tooltipText: "Send files to " + modelData.host + " (Taildrop)"
+                      tooltipText: "Send files to " + (modelData.host.length > 35 ? modelData.host.substring(0, 32) + "..." : modelData.host) + " (Taildrop)"
                       foreground: root.foreground
                       fontFamily: root.fontFamily
                       enabled: modelData.online
@@ -1238,7 +1238,7 @@ Panel {
               CopyChoice {
                 width: parent.width
                 visible: modelData.online
-                label: modelData.host
+                label: modelData.host + (modelData.ip ? " (" + modelData.ip + ")" : "")
                 icon: "󰒊"
                 onClicked: {
                   root.sendPeerFile(modelData, panel.activeDropPaths)

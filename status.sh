@@ -27,23 +27,30 @@ decode_hex() {
   fi
 }
 
+strip_delims() {
+  printf '%s' "$1" | tr -d '\r\n\t'
+}
+
 # ---------- tailscale ----------
 if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
   json=$(tailscale status --json 2>/dev/null)
   up=$(echo "$json" | jq -r 'if (.Self.Online // false) then 1 else 0 end')
-  self_host=$(echo "$json" | jq -r '.Self.HostName // "localhost"')
-  self_ip=$(echo "$json" | jq -r '.Self.TailscaleIPs[0] // ""')
-  self_os=$(echo "$json" | jq -r '.Self.OS // "linux"')
-  peers=$(echo "$json" | jq '[.Peer // [] | .[] | select(.Online == true)] | length')
-  echo -e "ts\t$up\t$peers\t$self_host\t$self_ip\t$self_os"
+  self_host=$(strip_delims "$(echo "$json" | jq -r '.Self.HostName // "localhost"')")
+  self_ip=$(strip_delims "$(echo "$json" | jq -r '.Self.TailscaleIPs[0] // ""')")
+  self_os=$(strip_delims "$(echo "$json" | jq -r '.Self.OS // "linux"')")
+  peers=$(echo "$json" | jq '[.Peer // {} | to_entries[] | select(.value.Online == true)] | length')
+  printf 'ts\t%s\t%s\t%s\t%s\t%s\n' "$up" "$peers" "$self_host" "$self_ip" "$self_os"
 
-  echo "$json" | jq -r '.Peer // [] | .[] | [(.HostName // ""), (.TailscaleIPs[0] // ""), (.OS // "linux"), (if .Online then "1" else "0" end), (.DNSName // "")] | @tsv' \
+  echo "$json" | jq -r '[.Peer // {} | to_entries[] | .value] | sort_by(.Online | not) | .[0:50] | .[] | [(.HostName // ""), (.TailscaleIPs[0] // ""), (.OS // "linux"), (if .Online then "1" else "0" end), (.DNSName // "")] | @tsv' 2>/dev/null \
     | while IFS=$'\t' read -r host pip os online dnsname; do
-        clean_dns="${dnsname%.}"
-        echo -e "peer\t$host\t$pip\t$os\t$online\t$clean_dns"
+        clean_host=$(strip_delims "$host")
+        clean_pip=$(strip_delims "$pip")
+        clean_os=$(strip_delims "$os")
+        clean_dns=$(strip_delims "${dnsname%.}")
+        printf 'peer\t%s\t%s\t%s\t%s\t%s\n' "$clean_host" "$clean_pip" "$clean_os" "$online" "$clean_dns"
       done
 else
-  echo -e "ts\t0\t0\tlocalhost\t\tlinux"
+  printf 'ts\t0\t0\tlocalhost\t\tlinux\n'
 fi
 
 # ---------- network ----------
@@ -64,7 +71,7 @@ gateway=$(ip route show default 2>/dev/null | awk '{print $3}' | head -1)
 wifi_radio=0
 [[ "$(nmcli radio wifi 2>/dev/null)" == "enabled" ]] && wifi_radio=1
 
-echo -e "net\t$ssid\t$type\t$ip\t$signal\t$metered\t$gateway\t$wifi_radio\t$active\t$freq"
+printf 'net\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(strip_delims "$ssid")" "$(strip_delims "$type")" "$(strip_delims "$ip")" "$signal" "$metered" "$(strip_delims "$gateway")" "$wifi_radio" "$(strip_delims "$active")" "$(strip_delims "$freq")"
 
 # ---------- network diagnostics (from omarchy-network-status) ----------
 if command -v omarchy-network-status >/dev/null 2>&1; then
@@ -73,7 +80,7 @@ if command -v omarchy-network-status >/dev/null 2>&1; then
   router_ping=$(echo "$net_verbose" | awk '$1=="router_ping_ms"{print $2}')
   internet_ping=$(echo "$net_verbose" | awk '$1=="internet_ping_ms"{print $2}')
   signal_dbm=$(echo "$net_verbose" | awk '$1=="signal_dbm"{print $2}')
-  echo -e "netdiag\t$bitrate\t$router_ping\t$internet_ping\t$signal_dbm"
+  printf 'netdiag\t%s\t%s\t%s\t%s\n' "$(strip_delims "$bitrate")" "$(strip_delims "$router_ping")" "$(strip_delims "$internet_ping")" "$(strip_delims "$signal_dbm")"
 fi
 
 # ---------- network band & dns ----------
@@ -82,20 +89,24 @@ if command -v omarchy-network-band >/dev/null 2>&1; then
   cur_band=$(echo "$band_out" | awk '$1=="band"{print $2}')
   sel_band=$(echo "$band_out" | awk '$1=="selected"{print $2}')
   avail_band=$(echo "$band_out" | awk '$1=="available"{print $2}')
-  echo -e "netband\t$cur_band\t$sel_band\t$avail_band"
+  printf 'netband\t%s\t%s\t%s\n' "$(strip_delims "$cur_band")" "$(strip_delims "$sel_band")" "$(strip_delims "$avail_band")"
 fi
 
 if command -v omarchy-dns >/dev/null 2>&1; then
   cur_dns=$(omarchy-dns 2>/dev/null | head -1 | xargs)
-  echo -e "netdns\t$cur_dns"
+  printf 'netdns\t%s\n' "$(strip_delims "$cur_dns")"
 fi
 
 # ---------- data usage ----------
 if command -v vnstat >/dev/null 2>&1; then
-  viface="${active:-$(vnstat --oneline 2>/dev/null | cut -d: -f1 | xargs)}"
-  rx=$(vnstat -d 1 --json "$viface" 2>/dev/null | jq -r '((.interfaces[0].traffic.day[0] // {}) | .rx // 0)')
-  tx=$(vnstat -d 1 --json "$viface" 2>/dev/null | jq -r '((.interfaces[0].traffic.day[0] // {}) | .tx // 0)')
-  echo -e "data\t$(human "${rx:-0}")\t$(human "${tx:-0}")\tvnstat"
+  viface="${active:-$(ip route show default 2>/dev/null | awk '{print $5}' | head -1)}"
+  viface="${viface:-$(vnstat --oneline 2>/dev/null | cut -d: -f1 | xargs)}"
+  vn_cmd=(vnstat -d 1 --json)
+  [ -n "$viface" ] && vn_cmd+=( -i "$viface" )
+  vn_json=$("${vn_cmd[@]}" 2>/dev/null)
+  rx=$(echo "$vn_json" | jq -r '((.interfaces[0].traffic.day[-1] // {}) | .rx // 0)' 2>/dev/null)
+  tx=$(echo "$vn_json" | jq -r '((.interfaces[0].traffic.day[-1] // {}) | .tx // 0)' 2>/dev/null)
+  printf 'data\t%s\t%s\tvnstat\n' "$(human "${rx:-0}")" "$(human "${tx:-0}")"
 
   # daily cap alert (cap file: bytes as integer)
   cap_file="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/link-data-cap"
@@ -119,15 +130,15 @@ else
       tx=$((tx + $(echo "$rest" | awk '{print $9}')))
       ;;
     esac
-  done < <(tail -n +3 /proc/net/dev | sed 's/://')
-  echo -e "data\t$(human "$rx")\t$(human "$tx")\tproc"
+  done < <(tail -n +3 /proc/net/dev 2>/dev/null | sed 's/://')
+  printf 'data\t%s\t%s\tproc\n' "$(human "$rx")" "$(human "$tx")"
 fi
 
 # ---------- firewall ----------
 active=$(systemctl is-active ufw 2>/dev/null)
 [ "$active" = "active" ] && a=1 || a=0
 rules=$(grep -c "^-A ufw-user-input" /etc/ufw/user.rules 2>/dev/null)
-echo -e "fw\t$a\t${rules:-0}"
+printf 'fw\t%s\t%s\n' "$a" "${rules:-0}"
 
 if [ -f /etc/ufw/user.rules ]; then
   awk '/^### tuple ###/ {
@@ -142,8 +153,9 @@ if [ -f /etc/ufw/user.rules ]; then
       }
     }
     print action "\t" proto "\t" port "\t" src "\t" comment
-  }' /etc/ufw/user.rules 2>/dev/null | while IFS=$'\t' read -r action proto port src raw_comment; do
+  }' /etc/ufw/user.rules 2>/dev/null | head -n 50 | while IFS=$'\t' read -r action proto port src raw_comment; do
     comment=$(decode_hex "$raw_comment")
-    echo -e "fwrule\t$action\t$proto\t$port\t$src\t$comment"
+    clean_comment=$(strip_delims "$comment")
+    printf 'fwrule\t%s\t%s\t%s\t%s\t%s\n' "$(strip_delims "$action")" "$(strip_delims "$proto")" "$(strip_delims "$port")" "$(strip_delims "$src")" "$clean_comment"
   done
 fi

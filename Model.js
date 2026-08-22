@@ -54,14 +54,16 @@ function parseStatus(text, root) {
       var pOs = (parts.length >= 4 && parts[3]) ? sanitizeText(parts[3].toLowerCase()) : "linux"
       var pOnline = (parts.length >= 5) ? (parts[4] === "1" || parts[4] === "true") : true
       var pDns = (parts.length >= 6) ? sanitizeText(parts[5]) : ""
-      peers.push({
-        host: pHName,
-        ip: pPip,
-        os: pOs,
-        online: pOnline,
-        dnsName: pDns,
-        target: pDns !== "" ? pDns : (pPip !== "" ? pPip : pHName)
-      })
+      if (peers.length < 50) {
+        peers.push({
+          host: pHName,
+          ip: pPip,
+          os: pOs,
+          online: pOnline,
+          dnsName: pDns,
+          target: pDns !== "" ? pDns : (pPip !== "" ? pPip : pHName)
+        })
+      }
     } else if (parts[0] === "net" && parts.length >= 6) {
       ssid = sanitizeText(parts[1])
       netType = sanitizeText(parts[2])
@@ -96,8 +98,8 @@ function parseStatus(text, root) {
       var port = sanitizeText(parts[3])
       var src = (parts.length >= 5) ? sanitizeText(parts[4]) : ""
       var comment = (parts.length >= 6) ? sanitizeText(parts[5]) : ""
-      var ruleKey = port + "/" + proto + ":" + src
-      if (!seenRules[ruleKey] && port && port !== "any") {
+      var ruleKey = port + "/" + proto + ":" + src + ":" + comment
+      if (!seenRules[ruleKey] && port && port !== "any" && fwRuleList.length < 50) {
         seenRules[ruleKey] = true
         fwRuleList.push({
           action: action,

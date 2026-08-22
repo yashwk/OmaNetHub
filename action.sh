@@ -85,6 +85,14 @@ case "$verb" in
   fw-open)
     port="$1"
     proto="$2"
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+      fail "Invalid port number"
+      exit 1
+    fi
+    if [[ -n "$proto" && ! "$proto" =~ ^(tcp|udp)$ ]]; then
+      fail "Invalid protocol"
+      exit 1
+    fi
     rule="$port"
     [ -n "$proto" ] && rule="$port/$proto"
     sudo ufw allow "$rule" >/dev/null 2>&1 && notify "Port $rule opened" || fail "Port $rule not opened (sudo needed)"
@@ -92,6 +100,14 @@ case "$verb" in
   fw-close)
     port="$1"
     proto="$2"
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+      fail "Invalid port number"
+      exit 1
+    fi
+    if [[ -n "$proto" && ! "$proto" =~ ^(tcp|udp)$ ]]; then
+      fail "Invalid protocol"
+      exit 1
+    fi
     rule="$port"
     [ -n "$proto" ] && rule="$port/$proto"
     sudo ufw delete allow "$rule" >/dev/null 2>&1 && notify "Port $rule closed" || fail "Port $rule not closed (sudo needed)"
