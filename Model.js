@@ -1,6 +1,10 @@
 function sanitizeText(str) {
   if (str === null || str === undefined) return ""
-  return String(str).replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim()
+  return String(str)
+    .replace(/<[^>]*>/g, "")                      // Strip all HTML tags
+    .replace(/[<>&"']/g, "")                      // Strip markup delimiters
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // Strip ASCII control characters
+    .trim()
 }
 
 function parseStatus(text, root) {

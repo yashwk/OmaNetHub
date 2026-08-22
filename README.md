@@ -46,10 +46,10 @@ Combines Wi-Fi controls, DNS/band management, signal & latency diagnostics, Tail
 - Admin console shortcut (`https://login.tailscale.com/admin/machines`)
 
 ### Firewall (UFW)
-- UFW status card: active/inactive, rule count, enable/disable toggle (`sudo ufw enable/disable`)
+- UFW status card: active/inactive, rule count, enable/disable toggle 
 - Allowed incoming rules list (parsed from `/etc/ufw/user.rules`) with per-rule close action
 - Open a port: port number + TCP/UDP chip, with quick presets (22, 80, 3000, 5173, 8080)
-- View verbose status in floating terminal (`sudo ufw status verbose`)
+- View verbose status in floating terminal
 
 ### Nautilus Integration (Optional)
 - **Send via Taildrop** context menu for GNOME Files (Nautilus). Right-click any file(s) → Send via Taildrop → choose online peer.
@@ -139,35 +139,8 @@ To customize position:
 ```bash
 omarchy bar move yashwanth.link --section center
 ```
-
-## Troubleshooting
-
-- **Validate manifest before publishing:**
-  ```bash
-  omarchy plugin validate ~/.config/omarchy/plugins/yashwanth.link
-  ```
-- **Logs:** `journalctl --user -u omarchy-shell` or `omarchy debug`
-- **Rescan after editing:**
-  ```bash
-  omarchy-shell shell rescanPlugins
-  # or
-  omarchy restart shell
-  ```
-- **Firewall actions need sudo** — ensure your user can run `sudo ufw ...` (polkit will prompt).
-
-## Development
-
-```bash
-git clone https://github.com/yashwk/OmaNetHub.git
-cd OmaNetHub
-# Edit Panel.qml / Model.js / status.sh / action.sh
-omarchy plugin validate .
-```
-
 ## License
 
-MIT — see [LICENSE](LICENSE) if present.
+MIT — see [LICENSE](LICENSE) 
 
 ---
-
-Made for Omarchy. Plugin id: `yashwanth.link` (`~/.config/omarchy/plugins/yashwanth.link/`)
