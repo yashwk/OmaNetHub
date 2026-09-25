@@ -28,6 +28,7 @@ Combines Wi-Fi controls, DNS/band management, signal & latency diagnostics, Tail
 
 ### Network
 - Wi-Fi radio toggle, restart, and QR code (via `omarchy.wifiqr`)
+- Wi-Fi discovery when offline: nearby networks with signal, security, and saved-state badges, auto-connect to known networks, inline password entry with error reporting, rescan and disconnect actions
 - Connected SSID, interface, frequency/band, signal strength, bitrate, and latency (router + internet ping via `omarchy-network-status`)
 - Local IP / gateway display with one-click copy to clipboard (`wl-copy`)
 - Wi-Fi band steering: Auto / 2.4 GHz / 5 GHz (via `omarchy-network-band`)
@@ -38,6 +39,7 @@ Combines Wi-Fi controls, DNS/band management, signal & latency diagnostics, Tail
 ### Tailnet (Tailscale)
 - Status card for this device: hostname, Tailscale IP, OS icon, online indicator, toggle (`tailscale up` / `down`)
 - Peer list from `tailscale status --json` with OS icons, IP, DNS name, online state
+- Exit node management: active exit node with one-click disconnect, available exit nodes switchable from peer cards
 - Copy actions: IPv4, hostname, or DNS name per peer
 - Taildrop file sharing:
   - Per-peer send button (opens file picker if no files pre-selected)

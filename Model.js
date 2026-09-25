@@ -9,6 +9,16 @@ function sanitizeText(str) {
     .substring(0, 256)                            // Bound field length for layout safety
 }
 
+function sanitizeSsid(str) {
+  if (str === null || str === undefined) return ""
+  return String(str)
+    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "")        // Strip ANSI escape codes
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // Strip ASCII control characters
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, "") // Strip zero-width & bidi format characters
+    .trim()
+    .substring(0, 128)                            // Bound field length for layout safety
+}
+
 function parseStatus(text, root) {
   var tailscaleUp = false
   var tailscalePeers = 0
@@ -41,8 +51,13 @@ function parseStatus(text, root) {
   var fwRuleList = []
   var seenRules = {}
 
-  var safeText = String(text || "").substring(0, 16384)
-  var lines = safeText.split("\n").slice(0, 100)
+  var exitNodeHost = ""
+  var exitNodeIp = ""
+  var exitNodeId = ""
+  var wifiNetworks = []
+
+  var safeText = String(text || "").substring(0, 32768)
+  var lines = safeText.split("\n").slice(0, 200)
   for (var i = 0; i < lines.length; i++) {
     var parts = lines[i].split("\t")
     if (parts[0] === "ts" && parts.length >= 4) {
@@ -51,12 +66,18 @@ function parseStatus(text, root) {
       selfHost = sanitizeText(parts[3] || "localhost")
       if (parts.length >= 5) selfIp = sanitizeText(parts[4])
       if (parts.length >= 6) selfOS = sanitizeText(parts[5])
+    } else if (parts[0] === "exitnode" && parts.length >= 2) {
+      exitNodeHost = sanitizeText(parts[1] || "")
+      if (parts.length >= 3) exitNodeIp = sanitizeText(parts[2] || "")
+      if (parts.length >= 4) exitNodeId = sanitizeText(parts[3] || "")
     } else if (parts[0] === "peer" && parts.length >= 4) {
       var pHName = sanitizeText(parts[1])
       var pPip = sanitizeText(parts[2])
       var pOs = (parts.length >= 4 && parts[3]) ? sanitizeText(parts[3].toLowerCase()) : "linux"
       var pOnline = (parts.length >= 5) ? (parts[4] === "1" || parts[4] === "true") : true
       var pDns = (parts.length >= 6) ? sanitizeText(parts[5]) : ""
+      var pExitNode = (parts.length >= 7) ? (parts[6] === "1" || parts[6] === "true") : false
+      var pExitNodeOption = (parts.length >= 8) ? (parts[7] === "1" || parts[7] === "true") : false
       if (peers.length < 50) {
         peers.push({
           host: pHName,
@@ -64,11 +85,28 @@ function parseStatus(text, root) {
           os: pOs,
           online: pOnline,
           dnsName: pDns,
+          exitNode: pExitNode,
+          exitNodeOption: pExitNodeOption,
           target: pDns !== "" ? pDns : (pPip !== "" ? pPip : pHName)
         })
       }
+    } else if (parts[0] === "wifinet" && parts.length >= 3) {
+      var wSsid = sanitizeSsid(parts[1])
+      var wSig = parseInt(parts[2], 10)
+      var wSec = (parts.length >= 4) ? sanitizeText(parts[3]) : ""
+      var wKnown = (parts.length >= 5) ? (parts[4] === "1" || parts[4] === "true") : false
+      var wInUse = (parts.length >= 6) ? (parts[5] === "1" || parts[5] === "true") : false
+      if (wSsid !== "" && wifiNetworks.length < 50) {
+        wifiNetworks.push({
+          ssid: wSsid,
+          signal: isNaN(wSig) ? 0 : Math.min(100, Math.max(0, wSig)),
+          security: wSec,
+          known: wKnown,
+          inUse: wInUse
+        })
+      }
     } else if (parts[0] === "net" && parts.length >= 6) {
-      ssid = sanitizeText(parts[1])
+      ssid = sanitizeSsid(parts[1])
       netType = sanitizeText(parts[2])
       netIp = sanitizeText(parts[3])
       var sigParsed = parseInt(parts[4], 10)
@@ -121,7 +159,11 @@ function parseStatus(text, root) {
   root.selfHost = selfHost
   root.selfIp = selfIp
   root.selfOS = selfOS
+  root.exitNodeHost = exitNodeHost
+  root.exitNodeIp = exitNodeIp
+  root.exitNodeId = exitNodeId
   root.peers = peers
+  root.wifiNetworks = wifiNetworks
   root.ssid = ssid
   root.netType = netType
   root.netIp = netIp
@@ -195,4 +237,28 @@ function formatBand(freq, iface) {
     else parts.push(n + " MHz")
   }
   return parts.length > 0 ? parts.join(" · ") : "Connected"
+}
+
+function isSecured(security) {
+  var s = String(security || "").trim().toLowerCase()
+  return s !== "" && s !== "--" && s !== "none"
+}
+
+function wifiSecurityIcon(security) {
+  return isSecured(security) ? "󰌾" : ""
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    sanitizeText: sanitizeText,
+    sanitizeSsid: sanitizeSsid,
+    parseStatus: parseStatus,
+    typeLabel: typeLabel,
+    osIcon: osIcon,
+    signalIcon: signalIcon,
+    barIcon: barIcon,
+    formatBand: formatBand,
+    isSecured: isSecured,
+    wifiSecurityIcon: wifiSecurityIcon
+  }
 }

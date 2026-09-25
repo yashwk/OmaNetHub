@@ -55,6 +55,21 @@ Panel {
   property var fwRuleList: []
   property bool statusFresh: false
 
+  property string exitNodeHost: ""
+  property string exitNodeIp: ""
+  property string exitNodeId: ""
+  property var wifiNetworks: []
+
+  // Wi-Fi inline password and action state
+  property string wifiPasswordSsid: ""
+  property string wifiPasswordText: ""
+  property string wifiActionSsid: ""
+  property string wifiActionKind: ""
+  property string wifiErrorSsid: ""
+  property string wifiErrorMsg: ""
+  property string _actionStderrText: ""
+  property string _actionStdoutText: ""
+
   readonly property bool haveTailscale: tailscaleUp || tailscalePeers > 0 || selfIp !== ""
   readonly property bool haveFirewall: fwActive || fwRules > 0
   readonly property string barText: Model.barIcon(signal, netType, tailscaleUp)
@@ -68,8 +83,40 @@ Panel {
   }
 
   function runAction(args) {
+    if (actionProc.running) return
+    root._actionStderrText = ""
+    root._actionStdoutText = ""
     actionProc.command = [root.scriptDir + "/action.sh"].concat(args)
     actionProc.running = true
+  }
+
+  function connectWifi(ssid, password, security) {
+    if (!ssid || root.wifiActionSsid !== "" || actionProc.running) return
+    root.wifiActionSsid = ssid
+    root.wifiActionKind = "connect"
+    root.wifiErrorSsid = ""
+    root.wifiErrorMsg = ""
+    actionProc.stdinSecret = (password !== undefined && password !== null && password !== "") ? password : ""
+    if (actionProc.stdinSecret !== "") {
+      root.runAction(["wifi-connect", ssid, "--stdin", security || ""])
+    } else {
+      root.runAction(["wifi-connect", ssid])
+    }
+  }
+
+  function cancelWifiPassword() {
+    actionProc.stdinSecret = ""
+    root.wifiPasswordSsid = ""
+    root.wifiPasswordText = ""
+    root.wifiErrorSsid = ""
+    root.wifiErrorMsg = ""
+    Qt.callLater(function() { if (root.opened && root.panelReady && keyCatcher) keyCatcher.forceActiveFocus() })
+  }
+
+  function rescanWifi() {
+    if (actionProc.running || root.wifiActionSsid !== "") return
+    root.runAction(["wifi-rescan"])
+    root.refresh()
   }
 
   function copyToClipboard(value, label) {
@@ -122,10 +169,69 @@ Panel {
   Process {
     id: actionProc
     command: []
-    onExited: root.refresh()
+    property string stdinSecret: ""
+    stdinEnabled: true
+    onStarted: {
+      if (stdinSecret !== "") {
+        write(stdinSecret + "\n")
+        stdinSecret = ""
+      }
+    }
+    stdout: StdioCollector { id: actionStdout; waitForEnd: true; onStreamFinished: root._actionStdoutText = text }
+    stderr: StdioCollector { id: actionStderr; waitForEnd: true; onStreamFinished: root._actionStderrText = text }
+    onExited: function(exitCode) {
+      if (root.wifiActionKind === "connect") {
+        if (exitCode !== 0) {
+          root.wifiErrorSsid = root.wifiActionSsid
+          var err = (actionStderr.text || root._actionStderrText || actionStdout.text || root._actionStdoutText || "").trim()
+          err = err.replace(/^Error:\s*/i, "").split("\n")[0]
+          root.wifiErrorMsg = err || "Connection failed"
+        } else {
+          root.wifiErrorSsid = ""
+          root.wifiErrorMsg = ""
+          root.wifiPasswordSsid = ""
+          root.wifiPasswordText = ""
+        }
+        root.wifiActionSsid = ""
+        root.wifiActionKind = ""
+      }
+      root.refresh()
+    }
   }
 
   Component.onCompleted: refresh()
+  Component.onDestruction: {
+    actionProc.stdinSecret = ""
+    if (statusProc.running) statusProc.running = false
+    if (actionProc.running) actionProc.running = false
+  }
+
+  Timer {
+    id: statusWatchdog
+    interval: 12000
+    repeat: false
+    running: statusProc.running
+    onTriggered: {
+      if (statusProc.running) statusProc.running = false
+    }
+  }
+
+  Timer {
+    id: actionWatchdog
+    interval: 60000
+    repeat: false
+    running: actionProc.running
+    onTriggered: {
+      actionProc.stdinSecret = ""
+      if (actionProc.running) actionProc.running = false
+      if (root.wifiActionSsid !== "") {
+        root.wifiErrorSsid = root.wifiActionSsid
+        root.wifiErrorMsg = "Action timed out"
+        root.wifiActionSsid = ""
+        root.wifiActionKind = ""
+      }
+    }
+  }
 
   property bool panelReady: false
 
@@ -140,6 +246,8 @@ Panel {
       panelReady = false
       settleTimer.restart()
       refresh()
+    } else {
+      cancelWifiPassword()
     }
   }
 
@@ -219,6 +327,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: root.wifiPasswordSsid !== ""
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
     }
@@ -356,7 +465,7 @@ Panel {
                       color: root.foreground
                     }
                     Text {
-                      text: root.netType === "wifi" ? Model.formatBand(root.netFreq, root.netIface) : (root.netIface !== "" ? root.netIface : "Connected")
+                      text: root.netType === "wifi" ? Model.formatBand(root.netFreq, root.netIface) : (root.netType === "ethernet" ? (root.netIface !== "" ? root.netIface : "Ethernet") : (root.netIface !== "" ? root.netIface : (!root.wifiRadio ? "Wi-Fi Disabled" : "Not connected")))
                       textFormat: Text.PlainText
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
@@ -379,6 +488,16 @@ Panel {
                     fontFamily: root.fontFamily
                     anchors.verticalCenter: parent.verticalCenter
                     onClicked: root.runAction(["wifi-restart"])
+                  }
+
+                  PanelActionButton {
+                    visible: root.netType === "wifi" && root.ssid !== ""
+                    iconText: "󰅙"
+                    tooltipText: "Disconnect from Wi-Fi"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: root.runAction(["wifi-disconnect"])
                   }
 
                   PanelActionButton {
@@ -410,8 +529,9 @@ Panel {
 
               PanelSeparator { width: parent.width }
 
-              // Diagnostics & Info Rows
+              // Diagnostics & Info Rows (connected)
               Column {
+                visible: root.ssid !== "" || root.netType === "ethernet"
                 width: parent.width
                 spacing: Style.space(8)
 
@@ -438,80 +558,389 @@ Panel {
                 }
               }
 
+              // Disconnected Wi-Fi Scanning & Connection Section
+              Column {
+                visible: root.ssid === ""
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  visible: !root.wifiRadio
+                  text: "Wi-Fi radio is currently disabled. Toggle the switch above to enable Wi-Fi."
+                  textFormat: Text.PlainText
+                  color: root.dimColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                }
+
+                Column {
+                  visible: root.wifiRadio
+                  width: parent.width
+                  spacing: Style.space(8)
+
+                  Item {
+                    width: parent.width
+                    implicitHeight: Math.max(availWifiTitle.implicitHeight, wifiScanBtn.implicitHeight)
+
+                    Text {
+                      id: availWifiTitle
+                      text: "AVAILABLE WI-FI NETWORKS (" + root.wifiNetworks.length + ")"
+                      textFormat: Text.PlainText
+                      color: Color.accent
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    PanelActionButton {
+                      id: wifiScanBtn
+                      iconText: "󰑐"
+                      tooltipText: "Rescan Wi-Fi networks"
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      enabled: !actionProc.running && root.wifiActionSsid === ""
+                      opacity: (!actionProc.running && root.wifiActionSsid === "") ? 1.0 : 0.5
+                      onClicked: root.rescanWifi()
+                    }
+                  }
+
+                  Text {
+                    visible: root.wifiNetworks.length === 0
+                    text: "Scanning for nearby Wi-Fi networks…"
+                    textFormat: Text.PlainText
+                    color: root.dimColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                  }
+
+                  Column {
+                    width: parent.width
+                    spacing: Style.space(6)
+                    visible: root.wifiNetworks.length > 0
+
+                    Repeater {
+                      model: root.wifiNetworks
+
+                      BorderSurface {
+                        id: netCard
+                        width: parent.width
+                        implicitHeight: netCardCol.implicitHeight + Style.space(16)
+                        color: Style.normalFillFor(root.foreground, Color.accent)
+                        radius: Style.cornerRadius
+                        borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+
+                        Column {
+                          id: netCardCol
+                          anchors.fill: parent
+                          anchors.margins: Style.space(8)
+                          spacing: Style.space(8)
+
+                          Item {
+                            width: parent.width
+                            implicitHeight: Math.max(netRowLeft.implicitHeight, netRowRight.implicitHeight)
+
+                            Row {
+                              id: netRowLeft
+                              anchors.left: parent.left
+                              anchors.right: netRowRight.left
+                              anchors.rightMargin: Style.space(8)
+                              anchors.verticalCenter: parent.verticalCenter
+                              spacing: Style.space(8)
+
+                              Text {
+                                text: Model.signalIcon(modelData.signal, "wifi")
+                                textFormat: Text.PlainText
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.title
+                                color: Color.accent
+                                anchors.verticalCenter: parent.verticalCenter
+                              }
+
+                              Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: Style.space(2)
+
+                                Row {
+                                  spacing: Style.space(6)
+                                  Text {
+                                    text: modelData.ssid
+                                    textFormat: Text.PlainText
+                                    font.family: root.fontFamily
+                                    font.pixelSize: Style.font.bodySmall
+                                    font.bold: true
+                                    color: root.foreground
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    elide: Text.ElideRight
+                                    width: Math.min(implicitWidth, Style.space(220))
+                                  }
+
+                                  BorderSurface {
+                                    visible: !!modelData.known
+                                    implicitHeight: Style.space(16)
+                                    implicitWidth: savedTxt.implicitWidth + Style.space(8)
+                                    radius: Style.cornerRadius
+                                    color: Style.selectedFillFor(root.foreground, Color.accent)
+                                    borderSpec: Border.controlSpec("selected", root.foreground, Color.accent)
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    Text {
+                                      id: savedTxt
+                                      anchors.centerIn: parent
+                                      text: "Saved"
+                                      textFormat: Text.PlainText
+                                      color: Color.accent
+                                      font.family: root.fontFamily
+                                      font.pixelSize: Style.font.caption
+                                      font.bold: true
+                                    }
+                                  }
+                                }
+
+                                Text {
+                                  text: modelData.signal + "% signal" + (modelData.security ? " · " + modelData.security : "")
+                                  textFormat: Text.PlainText
+                                  font.family: root.fontFamily
+                                  font.pixelSize: Style.font.caption
+                                  color: root.dimColor
+                                }
+                              }
+                            }
+
+                            Row {
+                              id: netRowRight
+                              anchors.right: parent.right
+                              anchors.verticalCenter: parent.verticalCenter
+                              spacing: Style.space(6)
+
+                              Text {
+                                visible: root.wifiActionSsid === modelData.ssid
+                                text: "Connecting…"
+                                textFormat: Text.PlainText
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                font.italic: true
+                                color: Color.accent
+                                anchors.verticalCenter: parent.verticalCenter
+                              }
+
+                              Text {
+                                visible: root.wifiErrorSsid === modelData.ssid && root.wifiPasswordSsid !== modelData.ssid
+                                text: root.wifiErrorMsg
+                                textFormat: Text.PlainText
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                color: Color.urgent
+                                anchors.verticalCenter: parent.verticalCenter
+                                elide: Text.ElideRight
+                                width: Math.min(implicitWidth, Style.space(160))
+                              }
+
+                              Text {
+                                text: Model.isSecured(modelData.security) ? "󰌾" : "󰌿"
+                                textFormat: Text.PlainText
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.bodySmall
+                                color: Model.isSecured(modelData.security) ? root.dimColor : Color.accent
+                                anchors.verticalCenter: parent.verticalCenter
+                              }
+                            }
+
+                            MouseArea {
+                              anchors.fill: parent
+                              cursorShape: Qt.PointingHandCursor
+                              enabled: root.wifiActionSsid === ""
+                              onClicked: {
+                                if ((modelData.known && root.wifiErrorSsid !== modelData.ssid) || !Model.isSecured(modelData.security)) {
+                                  root.connectWifi(modelData.ssid)
+                                } else {
+                                  if (root.wifiPasswordSsid === modelData.ssid) {
+                                    root.cancelWifiPassword()
+                                  } else {
+                                    root.wifiPasswordSsid = modelData.ssid
+                                    root.wifiPasswordText = ""
+                                    root.wifiErrorSsid = ""
+                                    root.wifiErrorMsg = ""
+                                  }
+                                }
+                              }
+                            }
+                          }
+
+                          // Inline password entry area
+                          Column {
+                            width: parent.width
+                            spacing: Style.space(6)
+                            visible: root.wifiPasswordSsid === modelData.ssid
+
+                            PanelSeparator { width: parent.width }
+
+                            Row {
+                              width: parent.width
+                              spacing: Style.space(6)
+
+                              TextField {
+                                id: wifiPwInput
+                                width: parent.width - inlineConnectBtn.implicitWidth - inlineCancelBtn.implicitWidth - Style.space(12)
+                                echoMode: TextInput.Password
+                                placeholderText: "Wi-Fi Password"
+                                text: root.wifiPasswordSsid === modelData.ssid ? root.wifiPasswordText : ""
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.bodySmall
+                                foreground: root.foreground
+                                enabled: root.wifiActionSsid === ""
+                                activeFocusOnTab: true
+                                onTextChanged: if (root.wifiPasswordSsid === modelData.ssid && text !== root.wifiPasswordText) root.wifiPasswordText = text
+                                onAccepted: {
+                                  if (text.length > 0 && root.wifiActionSsid === "") {
+                                    root.connectWifi(modelData.ssid, text, modelData.security)
+                                  }
+                                }
+                                Keys.onEscapePressed: root.cancelWifiPassword()
+                                onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
+                                Component.onCompleted: if (visible) Qt.callLater(forceActiveFocus)
+                              }
+
+                              Button {
+                                id: inlineConnectBtn
+                                text: "Connect"
+                                iconText: "󰄬"
+                                fontSize: Style.font.caption
+                                foreground: Color.accent
+                                fontFamily: root.fontFamily
+                                bordered: true
+                                activeFocusOnTab: true
+                                enabled: root.wifiPasswordText.length > 0 && root.wifiActionSsid === ""
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: root.connectWifi(modelData.ssid, root.wifiPasswordText, modelData.security)
+                              }
+
+                              Button {
+                                id: inlineCancelBtn
+                                text: "Cancel"
+                                iconText: "󰅙"
+                                fontSize: Style.font.caption
+                                foreground: root.dimColor
+                                fontFamily: root.fontFamily
+                                bordered: true
+                                activeFocusOnTab: true
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: root.cancelWifiPassword()
+                              }
+                            }
+
+                            Text {
+                              visible: root.wifiErrorSsid === modelData.ssid
+                              text: root.wifiErrorMsg
+                              textFormat: Text.PlainText
+                              font.family: root.fontFamily
+                              font.pixelSize: Style.font.caption
+                              color: Color.urgent
+                              width: parent.width
+                              wrapMode: Text.WordWrap
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
               PanelSeparator { width: parent.width }
 
-              // Band Steering & DNS Presets (using GridLayout for perfect label alignment)
-              GridLayout {
+              // Band Steering & DNS Presets
+              Column {
                 width: parent.width
-                columns: 2
-                rowSpacing: Style.space(8)
-                columnSpacing: Style.space(12)
+                spacing: Style.space(8)
 
-                Text {
-                  text: "Wi-Fi Band"
-                  textFormat: Text.PlainText
-                  color: root.dimColor
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                }
                 Row {
-                  spacing: Style.space(4)
-                  Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                  visible: root.ssid !== "" && root.netType === "wifi"
+                  width: parent.width
+                  spacing: Style.space(12)
 
-                  SelectableChip {
-                    label: "Auto"
-                    active: root.bandSelected === "auto" || root.bandSelected === ""
-                    onClicked: root.runAction(["set-band", "auto"])
+                  Text {
+                    text: "Wi-Fi Band"
+                    textFormat: Text.PlainText
+                    color: root.dimColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    width: Style.space(90)
+                    horizontalAlignment: Text.AlignRight
+                    anchors.verticalCenter: parent.verticalCenter
                   }
-                  SelectableChip {
-                    label: "2.4 GHz"
-                    active: root.bandSelected === "2.4"
-                    onClicked: root.runAction(["set-band", "2.4"])
-                  }
-                  SelectableChip {
-                    label: "5 GHz"
-                    active: root.bandSelected === "5"
-                    onClicked: root.runAction(["set-band", "5"])
+                  Row {
+                    spacing: Style.space(4)
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    SelectableChip {
+                      label: "Auto"
+                      active: root.bandSelected === "auto" || root.bandSelected === ""
+                      onClicked: root.runAction(["set-band", "auto"])
+                    }
+                    SelectableChip {
+                      label: "2.4 GHz"
+                      active: root.bandSelected === "2.4"
+                      onClicked: root.runAction(["set-band", "2.4"])
+                    }
+                    SelectableChip {
+                      label: "5 GHz"
+                      active: root.bandSelected === "5"
+                      onClicked: root.runAction(["set-band", "5"])
+                    }
                   }
                 }
 
-                Text {
-                  text: "DNS Provider"
-                  textFormat: Text.PlainText
-                  color: root.dimColor
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                }
                 Row {
-                  spacing: Style.space(4)
-                  Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                  width: parent.width
+                  spacing: Style.space(12)
 
-                  SelectableChip {
-                    label: "DHCP"
-                    active: root.dnsCurrent.indexOf("DHCP") !== -1
-                    onClicked: root.runAction(["set-dns", "DHCP"])
+                  Text {
+                    text: "DNS Provider"
+                    textFormat: Text.PlainText
+                    color: root.dimColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    width: Style.space(90)
+                    horizontalAlignment: Text.AlignRight
+                    anchors.verticalCenter: parent.verticalCenter
                   }
-                  SelectableChip {
-                    label: "Cloudflare"
-                    active: root.dnsCurrent.indexOf("Cloudflare") !== -1
-                    onClicked: root.runAction(["set-dns", "Cloudflare"])
-                  }
-                  SelectableChip {
-                    label: "Google"
-                    active: root.dnsCurrent.indexOf("Google") !== -1
-                    onClicked: root.runAction(["set-dns", "Google"])
-                  }
-                  SelectableChip {
-                    label: "Mullvad"
-                    active: root.dnsCurrent.indexOf("Mullvad") !== -1
-                    onClicked: root.runAction(["set-dns", "Mullvad"])
-                  }
-                  SelectableChip {
-                    label: "Custom"
-                    active: root.dnsCurrent.indexOf("Custom") !== -1
-                    onClicked: root.runAction(["set-dns", "Custom"])
+                  Row {
+                    spacing: Style.space(4)
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    SelectableChip {
+                      label: "DHCP"
+                      active: root.dnsCurrent.indexOf("DHCP") !== -1
+                      onClicked: root.runAction(["set-dns", "DHCP"])
+                    }
+                    SelectableChip {
+                      label: "Cloudflare"
+                      active: root.dnsCurrent.indexOf("Cloudflare") !== -1
+                      onClicked: root.runAction(["set-dns", "Cloudflare"])
+                    }
+                    SelectableChip {
+                      label: "Google"
+                      active: root.dnsCurrent.indexOf("Google") !== -1
+                      onClicked: root.runAction(["set-dns", "Google"])
+                    }
+                    SelectableChip {
+                      label: "Mullvad"
+                      active: root.dnsCurrent.indexOf("Mullvad") !== -1
+                      onClicked: root.runAction(["set-dns", "Mullvad"])
+                    }
+                    SelectableChip {
+                      label: "Custom"
+                      active: root.dnsCurrent.indexOf("Custom") !== -1
+                      onClicked: root.runAction(["set-dns", "Custom"])
+                    }
                   }
                 }
               }
@@ -644,6 +1073,32 @@ Panel {
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     color: root.dimColor
+                  }
+
+                  Row {
+                    visible: (root.exitNodeHost !== "" || root.exitNodeIp !== "")
+                    spacing: Style.space(6)
+
+                    Text {
+                      text: "Exit Node: " + (root.exitNodeHost !== "" ? (root.exitNodeIp !== "" ? root.exitNodeHost + " (" + root.exitNodeIp + ")" : root.exitNodeHost) : root.exitNodeIp)
+                      textFormat: Text.PlainText
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                      color: Color.accent
+                      anchors.verticalCenter: parent.verticalCenter
+                      elide: Text.ElideRight
+                      width: Math.min(implicitWidth, Style.space(240))
+                    }
+
+                    PanelActionButton {
+                      iconText: "󰅙"
+                      tooltipText: "Disconnect exit node"
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      anchors.verticalCenter: parent.verticalCenter
+                      onClicked: root.runAction(["clear-exit-node"])
+                    }
                   }
                 }
               }
@@ -792,6 +1247,9 @@ Panel {
                           font.family: root.fontFamily
                           font.pixelSize: Style.font.bodySmall
                           font.bold: true
+                          anchors.verticalCenter: parent.verticalCenter
+                          elide: Text.ElideRight
+                          width: Math.min(implicitWidth, Style.space(160))
                         }
                         Rectangle {
                           width: Style.space(6)
@@ -799,6 +1257,94 @@ Panel {
                           radius: width / 2
                           color: modelData.online ? "#55dd77" : "#888888"
                           anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        // Active Exit Node Tag
+                        BorderSurface {
+                          id: activeExitTag
+                          visible: !!modelData.exitNode
+                          implicitHeight: Style.space(18)
+                          implicitWidth: activeExitTagRow.implicitWidth + Style.space(10)
+                          radius: Style.cornerRadius
+                          color: Style.selectedFillFor(root.foreground, Color.accent)
+                          borderSpec: Border.controlSpec("selected", root.foreground, Color.accent)
+                          anchors.verticalCenter: parent.verticalCenter
+
+                          Row {
+                            id: activeExitTagRow
+                            anchors.centerIn: parent
+                            spacing: Style.space(4)
+
+                            Text {
+                              text: "Active Exit Node"
+                              textFormat: Text.PlainText
+                              color: Color.accent
+                              font.family: root.fontFamily
+                              font.pixelSize: Style.font.caption
+                              font.bold: true
+                              anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            Text {
+                              text: "󰅙"
+                              textFormat: Text.PlainText
+                              color: Color.accent
+                              font.family: root.fontFamily
+                              font.pixelSize: Style.font.caption
+                              anchors.verticalCenter: parent.verticalCenter
+                            }
+                          }
+
+                          MouseArea {
+                            id: activeExitMouse
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                            onClicked: root.runAction(["clear-exit-node"])
+                          }
+
+                          PanelToolTip {
+                            visible: activeExitMouse.containsMouse
+                            text: "Click to disconnect exit node"
+                            fontFamily: root.fontFamily
+                          }
+                        }
+
+                        // Available Exit Node Tag
+                        BorderSurface {
+                          id: availExitTag
+                          visible: !!modelData.exitNodeOption && !modelData.exitNode
+                          implicitHeight: Style.space(18)
+                          implicitWidth: availExitText.implicitWidth + Style.space(10)
+                          radius: Style.cornerRadius
+                          color: availExitMouse.containsMouse ? Style.selectedFillFor(root.foreground, Color.accent) : "transparent"
+                          borderSpec: Border.controlSpec(availExitMouse.containsMouse ? "hover-cursor" : "normal", root.foreground, Color.accent)
+                          anchors.verticalCenter: parent.verticalCenter
+
+                          Text {
+                            id: availExitText
+                            anchors.centerIn: parent
+                            text: "Exit Node"
+                            textFormat: Text.PlainText
+                            color: availExitMouse.containsMouse ? Color.accent : root.dimColor
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                            font.bold: availExitMouse.containsMouse
+                          }
+
+                          MouseArea {
+                            id: availExitMouse
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                            onClicked: root.runAction(["set-exit-node", modelData.dnsName || modelData.ip || modelData.host])
+                          }
+
+                          PanelToolTip {
+                            visible: availExitMouse.containsMouse
+                            text: "Set as exit node"
+                            fontFamily: root.fontFamily
+                          }
                         }
                       }
 
@@ -1053,7 +1599,7 @@ Panel {
                     id: ruleDeleteBtn
                     iconText: "󰩺"
                     tooltipText: "Delete this allow rule"
-                    foreground: "#ff5555"
+                    foreground: root.foreground
                     fontFamily: root.fontFamily
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
