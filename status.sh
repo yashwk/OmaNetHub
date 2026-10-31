@@ -35,26 +35,33 @@ strip_delims() {
 
 # ---------- tailscale ----------
 if command -v tailscale >/dev/null 2>&1 && timeout 3 tailscale status >/dev/null 2>&1; then
-  json=$(timeout 3 tailscale status --json 2>/dev/null | head -c 131072)
+  # Cap is a sanity bound only: the Mullvad add-on injects ~500 exit-node peers,
+  # pushing the JSON past 800KB. Truncating it mid-document makes jq fail and the
+  # whole Tailscale tab falls back to "not connected".
+  json=$(timeout 3 tailscale status --json 2>/dev/null | head -c 8388608)
   ts_out=$(echo "$json" | jq -r '
     (.Self // {}) as $self |
+    (.ExitNodeStatus // null) as $ens |
+    # Real tailnet devices only: hide Mullvad exit nodes unless one is the active exit node.
+    ([.Peer // {} | to_entries[] | .value
+      | . + {_active: ((.ExitNode == true) or ($ens != null and (.ID // "") != "" and .ID == $ens.ID))}
+      | select(._active or (any(.Tags[]?; . == "tag:mullvad-exit-node") | not))]) as $peers |
     (if ($self.Online // false) then "1" else "0" end) as $up |
     ($self.HostName // "localhost" | gsub("[\r\n\t]"; "")) as $shost |
     ($self.TailscaleIPs[0] // "" | gsub("[\r\n\t]"; "")) as $sip |
     ($self.OS // "linux" | gsub("[\r\n\t]"; "")) as $sos |
-    ([.Peer // {} | to_entries[] | select(.value.Online == true)] | length) as $online_count |
+    ([$peers[] | select(.Online == true)] | length) as $online_count |
     "ts\t\($up)\t\($online_count)\t\($shost)\t\($sip)\t\($sos)",
 
-    (.ExitNodeStatus // null) as $ens |
     (if $ens != null and (($ens.ID // "") != "" or ($ens.TailscaleIPs // []) != []) then
-      ([.Peer // {} | to_entries[] | .value | select((.ID != null and .ID == $ens.ID) or .ExitNode == true) | .HostName][0] // ((($ens.TailscaleIPs[0] // "Exit Node") | split("/")[0])))
+      ([$peers[] | select(._active) | .HostName][0] // ((($ens.TailscaleIPs[0] // "Exit Node") | split("/")[0])))
     else "" end | gsub("[\r\n\t]"; "")) as $ehost |
     (if $ens != null and ($ens.TailscaleIPs // []) != [] then ($ens.TailscaleIPs[0] | split("/")[0]) else "" end | gsub("[\r\n\t]"; "")) as $eip |
     ($ens.ID // "" | gsub("[\r\n\t]"; "")) as $eid |
     "exitnode\t\($ehost)\t\($eip)\t\($eid)",
 
-    ([.Peer // {} | to_entries[] | .value] | sort_by((((.ExitNode // false) or ($ens != null and $ens.ID != null and $ens.ID != "" and .ID == $ens.ID)) | not), (.Online // false | not)) | .[0:50] | .[] |
-      "peer\t\(.HostName // "" | gsub("[\r\n\t]"; ""))\t\(.TailscaleIPs[0] // "" | gsub("[\r\n\t]"; ""))\t\(.OS // "linux" | gsub("[\r\n\t]"; ""))\t\(if .Online then "1" else "0" end)\t\((.DNSName // "") | sub("\\.$"; "") | gsub("[\r\n\t]"; ""))\t\(if (.ExitNode == true or ($ens != null and $ens.ID != null and $ens.ID != "" and .ID == $ens.ID)) then "1" else "0" end)\t\(if .ExitNodeOption then "1" else "0" end)")
+    ($peers | sort_by((._active | not), (.Online // false | not)) | .[0:50] | .[] |
+      "peer\t\(.HostName // "" | gsub("[\r\n\t]"; ""))\t\(.TailscaleIPs[0] // "" | gsub("[\r\n\t]"; ""))\t\(.OS // "linux" | gsub("[\r\n\t]"; ""))\t\(if .Online then "1" else "0" end)\t\((.DNSName // "") | sub("\\.$"; "") | gsub("[\r\n\t]"; ""))\t\(if ._active then "1" else "0" end)\t\(if .ExitNodeOption then "1" else "0" end)")
   ' 2>/dev/null)
   if [ -n "$ts_out" ]; then
     printf '%s\n' "$ts_out"
