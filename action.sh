@@ -26,9 +26,12 @@ fail() {
 }
 
 # Print the UUIDs of every saved Wi-Fi profile that belongs to an SSID.
-# Profiles are matched by 802-11-wireless.ssid first (the authoritative link)
-# and by connection NAME second, because NM lets a profile be renamed
-# independently of its SSID and older setups often have no ssid property set.
+# 802-11-wireless.ssid is authoritative: when it is present and different
+# from the requested SSID the profile never matches, even if its display
+# name does. Without that exclusion, forgetting or updating "Home" could
+# also delete a renamed profile for "Office" or overwrite its PSK. The
+# connection name is used only when the SSID property is genuinely
+# unavailable (legacy profiles).
 # Usage: wifi_profile_uuids <ssid>
 wifi_profile_uuids() {
   local want="$1" uuid ssid name
@@ -37,8 +40,8 @@ wifi_profile_uuids() {
     ssid=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show uuid "$uuid" 2>/dev/null)
     # nmcli escapes ':' in values as '\:', which would break the comparison
     ssid=${ssid//\\:/:}
-    if [ -n "$ssid" ] && [ "$ssid" = "$want" ]; then
-      printf '%s\n' "$uuid"
+    if [ -n "$ssid" ]; then
+      [ "$ssid" = "$want" ] && printf '%s\n' "$uuid"
       continue
     fi
     name=$(timeout 2 nmcli --escape no -g connection.id connection show uuid "$uuid" 2>/dev/null)
@@ -119,9 +122,10 @@ case "$verb" in
           key_mgmt="sae"
           ;;
       esac
-      # Saved profiles may be renamed, so match by SSID first, NAME second.
-      # Update every profile for this SSID: a stale duplicate would otherwise
-      # keep autoconnecting with the old PSK and fail again later.
+      # Saved profiles may be renamed, so match by SSID; the display name is a
+      # fallback only for profiles with no SSID property. Update every profile
+      # for this SSID: a stale duplicate would otherwise keep autoconnecting
+      # with the old PSK and fail again later.
       mapfile -t profiles < <(wifi_profile_uuids "$ssid")
       u="${profiles[0]:-}"
       created=0
