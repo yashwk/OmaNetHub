@@ -1953,13 +1953,22 @@ Panel {
               placeholderText: "Port (e.g. 8080)"
               digitsOnly: true
               maxLength: 5
-              text: root.fwNewPort
               onTextChanged: root.fwNewPort = text
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
               foreground: root.foreground
               scriptDir: root.scriptDir
               activeFocusOnTab: true
+
+              // A plain `text: root.fwNewPort` binding would be destroyed by
+              // the first keystroke, so clearing after Open and preset clicks
+              // would leave the stale value on screen. A Binding object keeps
+              // the external sync alive across user edits.
+              Binding {
+                target: newPortField
+                property: "text"
+                value: root.fwNewPort
+              }
             }
 
             Row {
