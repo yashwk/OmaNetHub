@@ -56,6 +56,11 @@ Combines Wi-Fi controls, DNS/band management, signal & latency diagnostics, Tail
 - Open a port: port number + TCP/UDP chip, with quick presets (22, 80, 3000, 5173, 8080)
 - View verbose status in floating terminal
 
+### Input safety
+- The Wi-Fi password and firewall port fields are custom QML inputs; they do not instantiate Qt's native text input, which reads clipboard text automatically when the clipboard changes
+- Paste is explicit and byte-bounded: `bin/clipboard-paste` streams `wl-paste` through `head -c` under `timeout`, so at most 4 KiB and 2 seconds reach the shell
+- Ctrl+V, Shift+Insert, Ctrl+Shift+V and middle-click (primary selection) all use the same bounded path; keyboard entry, password masking and the port workflow are unchanged
+
 ### Nautilus Integration (Optional)
 - **Send via Taildrop** context menu for GNOME Files (Nautilus). Right-click any file(s) → Send via Taildrop → choose online peer.
 - Explicit installation & removal scripts provided in `bin/`:
@@ -126,7 +131,7 @@ To install or remove the "Send via Taildrop" right-click extension in Nautilus:
 - Omarchy shell (`omarchy-shell` / Quickshell) — `omarchy plugin` and `omarchy-shell shell summon` helpers
 - `tailscale` CLI (for Tailnet tab; optional otherwise) — `tailscale status --json`
 - `jq` (parsing `tailscale` JSON in `status.sh`)
-- `wl-copy` (clipboard copy)
+- `wl-copy` (clipboard copy) and `wl-paste` (bounded clipboard paste)
 - `nmcli` / NetworkManager (network state, optional helpers: `omarchy-network-status`, `omarchy-network-band`, `omarchy-dns`, `omarchy-wifiqr`, `omarchy.speedtest`)
 - `vnstat` (optional; adds the "today" data usage total and daily cap alerts, session totals come from `/sys/class/net` either way)
 - `ufw` (optional, Firewall tab)

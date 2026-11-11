@@ -1078,10 +1078,13 @@ Panel {
                               width: parent.width
                               spacing: Style.space(6)
 
-                              TextField {
+                              // Custom non-native field: see BoundedTextField.qml
+                              // for why editable Qt text inputs are avoided.
+                              BoundedTextField {
                                 id: wifiPwInput
                                 width: parent.width - inlineConnectBtn.implicitWidth - inlineCancelBtn.implicitWidth - Style.space(12)
-                                echoMode: TextInput.Password
+                                password: true
+                                maxLength: 256
                                 placeholderText: root.wifiErrorNeedsPassword && root.wifiErrorSsid === modelData.ssid
                                   ? "New Wi-Fi Password"
                                   : "Wi-Fi Password"
@@ -1089,6 +1092,7 @@ Panel {
                                 font.family: root.fontFamily
                                 font.pixelSize: Style.font.bodySmall
                                 foreground: root.foreground
+                                scriptDir: root.scriptDir
                                 enabled: root.wifiActionSsid === ""
                                 activeFocusOnTab: true
                                 onTextChanged: if (root.wifiPasswordSsid === modelData.ssid && text !== root.wifiPasswordText) root.wifiPasswordText = text
@@ -1098,7 +1102,12 @@ Panel {
                                   }
                                 }
                                 Keys.onEscapePressed: root.cancelWifiPassword()
-                                onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
+                                onVisibleChanged: {
+                                  if (visible) {
+                                    text = root.wifiPasswordText
+                                    Qt.callLater(forceActiveFocus)
+                                  }
+                                }
                                 Component.onCompleted: if (visible) Qt.callLater(forceActiveFocus)
                               }
 
@@ -1938,15 +1947,19 @@ Panel {
             width: parent.width
             spacing: Style.space(6)
 
-            TextField {
+            BoundedTextField {
               id: newPortField
               width: parent.width * 0.45
               placeholderText: "Port (e.g. 8080)"
+              digitsOnly: true
+              maxLength: 5
               text: root.fwNewPort
               onTextChanged: root.fwNewPort = text
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
               foreground: root.foreground
+              scriptDir: root.scriptDir
+              activeFocusOnTab: true
             }
 
             Row {

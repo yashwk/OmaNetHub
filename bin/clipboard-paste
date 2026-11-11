@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Bounded clipboard reader for OmaNetHub's non-native input fields.
+#
+# Usage: clipboard-paste [byte-limit] [deadline-seconds] [clipboard|primary]
+#
+# wl-paste streams the selected offer to stdout. `head -c` stops the stream at
+# the byte limit and closes the pipe; `timeout` kills a producer that keeps the
+# offer open. The QML side never reads the native clipboard itself, so a large
+# or never-ending shared-shell offer cannot be accumulated in the shell process.
+
+set -u
+
+limit="${1:-4096}"
+deadline="${2:-2}"
+selection="${3:-clipboard}"
+
+case "$limit" in
+  ''|*[!0-9]*) limit=4096 ;;
+esac
+case "$deadline" in
+  ''|*[!0-9]*) deadline=2 ;;
+esac
+
+args=(--no-newline)
+if [ "$selection" = "primary" ]; then
+  args+=(--primary)
+fi
+
+timeout --signal=KILL "$deadline" wl-paste "${args[@]}" 2>/dev/null | head -c "$limit"
+exit 0
