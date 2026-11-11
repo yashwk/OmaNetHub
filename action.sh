@@ -6,6 +6,7 @@ export LC_ALL=C
 #   notify <message>
 #   ts-up | ts-down | set-exit-node [target] | clear-exit-node
 #   wifi-connect <ssid> [--stdin [security]] | wifi-disconnect | wifi-rescan
+#   wifi-forget <ssid>
 #   wifi-toggle | wifi-restart | wifi-qr | speedtest
 #   fw-enable | fw-disable | fw-open <port> [proto] | fw-close <port> [proto]
 
@@ -22,6 +23,29 @@ notify() {
 }
 fail() {
   omarchy notification send -u critical -g 󰌗 "Network Hub" "$(clean "$1")" 2>/dev/null
+}
+
+# Print the UUIDs of every saved Wi-Fi profile that belongs to an SSID.
+# Profiles are matched by 802-11-wireless.ssid first (the authoritative link)
+# and by connection NAME second, because NM lets a profile be renamed
+# independently of its SSID and older setups often have no ssid property set.
+# Usage: wifi_profile_uuids <ssid>
+wifi_profile_uuids() {
+  local want="$1" uuid ssid name
+  for uuid in $(timeout 5 nmcli -t -f UUID,TYPE connection show 2>/dev/null \
+      | awk -F: '$2 ~ /^(802-11-wireless|wifi)$/ {print $1}'); do
+    ssid=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show uuid "$uuid" 2>/dev/null)
+    # nmcli escapes ':' in values as '\:', which would break the comparison
+    ssid=${ssid//\\:/:}
+    if [ -n "$ssid" ] && [ "$ssid" = "$want" ]; then
+      printf '%s\n' "$uuid"
+      continue
+    fi
+    name=$(timeout 2 nmcli --escape no -g connection.id connection show uuid "$uuid" 2>/dev/null)
+    if [ -n "$name" ] && [ "$name" = "$want" ]; then
+      printf '%s\n' "$uuid"
+    fi
+  done
 }
 
 case "$verb" in
@@ -95,26 +119,30 @@ case "$verb" in
           key_mgmt="sae"
           ;;
       esac
-      # Saved profiles may be renamed, so match by SSID first, NAME second
-      u=""
-      uuids=$(timeout 5 nmcli -t -f UUID,TYPE connection show 2>/dev/null | awk -F: '$2 ~ /^(802-11-wireless|wifi)$/ {print $1}')
-      for uuid in $uuids; do
-        s=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show uuid "$uuid" 2>/dev/null)
-        if [ -n "$s" ] && [ "$s" = "$ssid" ]; then
-          u="$uuid"
-          break
-        fi
-      done
-      if [ -z "$u" ]; then
-        u=$(timeout 5 nmcli -t -f UUID,NAME connection show 2>/dev/null | awk -F: -v s="$ssid" '$2==s {print $1; exit}')
-      fi
+      # Saved profiles may be renamed, so match by SSID first, NAME second.
+      # Update every profile for this SSID: a stale duplicate would otherwise
+      # keep autoconnecting with the old PSK and fail again later.
+      mapfile -t profiles < <(wifi_profile_uuids "$ssid")
+      u="${profiles[0]:-}"
       created=0
       if [ -z "$u" ]; then
         u=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || { hex=$(tr -dc 'a-f0-9' </dev/urandom 2>/dev/null | head -c 32); printf '%s-%s-%s-%s-%s' "${hex:0:8}" "${hex:8:4}" "${hex:12:4}" "${hex:16:4}" "${hex:20:12}"; })
         timeout 10 nmcli connection add type wifi con-name "$ssid" ssid "$ssid" connection.uuid "$u" autoconnect yes >/dev/null 2>&1
         created=1
+        profiles=("$u")
       fi
-      printf 'set wifi-sec.key-mgmt %s\nset wifi-sec.psk %s\nsave\nquit\n' "$key_mgmt" "$pw" | timeout 10 nmcli connection edit uuid "$u" >/dev/null 2>&1
+      for p in "${profiles[@]}"; do
+        # With no security hint (the saved-profile update flow), keep whatever
+        # key management the profile already uses instead of forcing wpa-psk.
+        p_kmgmt="$key_mgmt"
+        if [ -z "$sec" ]; then
+          existing=$(timeout 2 nmcli -g 802-11-wireless-security.key-mgmt connection show uuid "$p" 2>/dev/null | head -n 1)
+          case "$existing" in
+            wpa-psk|sae|wpa-eap-suite-b-192) p_kmgmt="$existing" ;;
+          esac
+        fi
+        printf 'set wifi-sec.key-mgmt %s\nset wifi-sec.psk %s\nsave\nquit\n' "$p_kmgmt" "$pw" | timeout 10 nmcli connection edit uuid "$p" >/dev/null 2>&1
+      done
       out=$(timeout 25 nmcli connection up uuid "$u" 2>&1)
       rc=$?
       if [ $rc -ne 0 ] && [ "$created" -eq 1 ]; then
@@ -149,6 +177,44 @@ case "$verb" in
     else
       notify "Wi-Fi disconnected"
     fi
+    ;;
+  wifi-forget)
+    ssid="$1"
+    if [ -z "$ssid" ]; then
+      fail "No Wi-Fi network specified"
+      echo "No Wi-Fi network specified" >&2
+      exit 1
+    fi
+    case "$ssid" in
+      -*)
+        fail "Invalid Wi-Fi network name"
+        echo "Invalid Wi-Fi network name: $ssid" >&2
+        exit 1
+        ;;
+    esac
+    # Never delete a profile we just failed to find: an empty list would make
+    # "forget" a silent no-op that still reports success.
+    mapfile -t forgotten < <(wifi_profile_uuids "$ssid")
+    if [ "${#forgotten[@]}" -eq 0 ]; then
+      fail "No saved profile for $ssid"
+      echo "No saved Wi-Fi profile for $ssid" >&2
+      exit 1
+    fi
+    # Disconnect first when the profile is active, otherwise NM falls back to
+    # autoconnecting it again right after deletion.
+    active_uuid=$(timeout 5 nmcli -t -f UUID,TYPE,ACTIVE connection show 2>/dev/null \
+      | awk -F: '$2 ~ /^(802-11-wireless|wifi)$/ && $3=="yes" {print $1; exit}')
+    for uuid in "${forgotten[@]}"; do
+      if [ -n "$active_uuid" ] && [ "$uuid" = "$active_uuid" ]; then
+        timeout 10 nmcli connection down uuid "$uuid" >/dev/null 2>&1 || true
+      fi
+      timeout 10 nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || {
+        fail "Failed to forget $ssid"
+        echo "Failed to delete profile $uuid" >&2
+        exit 1
+      }
+    done
+    notify "Forgot Wi-Fi network $ssid"
     ;;
   wifi-rescan)
     timeout 5 nmcli dev wifi rescan >/dev/null 2>&1 && notify "Wi-Fi scan refreshed" || true

@@ -19,6 +19,67 @@ function sanitizeSsid(str) {
     .substring(0, 128)                            // Bound field length for layout safety
 }
 
+// Builds the single Wi-Fi list shown in the panel: saved profiles first
+// (active one on top, then strongest signal), followed by unsaved scans
+// strongest first. A saved profile absorbs the matching scan so its row keeps
+// live signal/security data instead of appearing twice.
+function mergeWifiList(scanned, saved) {
+  var out = []
+  var bySsid = {}
+
+  for (var i = 0; i < scanned.length; i++) {
+    var s = scanned[i]
+    if (bySsid[s.ssid]) continue
+    bySsid[s.ssid] = s
+  }
+
+  var savedNames = {}
+  for (var j = 0; j < saved.length; j++) {
+    var p = saved[j]
+    var hit = bySsid[p.ssid]
+    // Keep the active connection listed even if the scan was stale or failed,
+    // so the row you are connected through never disappears.
+    if (!hit && !p.active) continue
+    savedNames[p.ssid] = true
+    out.push({
+      ssid: p.ssid,
+      name: p.name,
+      signal: hit ? hit.signal : -1,
+      security: hit ? hit.security : "",
+      known: true,
+      inUse: p.active || (hit ? hit.inUse : false),
+      active: p.active,
+      saved: true,
+      reachable: !!hit
+    })
+  }
+
+  // Active connection first, then saved entries by signal, then the rest.
+  for (var k = 0; k < scanned.length; k++) {
+    var n = scanned[k]
+    if (savedNames[n.ssid]) continue
+    out.push({
+      ssid: n.ssid,
+      name: n.ssid,
+      signal: n.signal,
+      security: n.security,
+      known: false,
+      inUse: n.inUse,
+      active: n.inUse,
+      saved: false,
+      reachable: true
+    })
+  }
+
+  out.sort(function(a, b) {
+    if (a.active !== b.active) return a.active ? -1 : 1
+    if (a.saved !== b.saved) return a.saved ? -1 : 1
+    return (b.signal || 0) - (a.signal || 0)
+  })
+
+  return out.slice(0, 60)
+}
+
 function parseStatus(text, root) {
   var tailscaleUp = false
   var tailscalePeers = 0
@@ -45,6 +106,9 @@ function parseStatus(text, root) {
   var dnsCurrent = ""
   var dataRx = ""
   var dataTx = ""
+  var dataTodayRx = ""
+  var dataTodayTx = ""
+  var dataIface = ""
   var dataSource = ""
   var fwActive = false
   var fwRules = 0
@@ -55,6 +119,8 @@ function parseStatus(text, root) {
   var exitNodeIp = ""
   var exitNodeId = ""
   var wifiNetworks = []
+  var savedProfiles = []
+  var sawNetLine = false
 
   var safeText = String(text || "").substring(0, 32768)
   var lines = safeText.split("\n").slice(0, 200)
@@ -105,7 +171,15 @@ function parseStatus(text, root) {
           inUse: wInUse
         })
       }
+    } else if (parts[0] === "wifsaved" && parts.length >= 3) {
+      var pName = sanitizeText(parts[1])
+      var pSsid = sanitizeSsid(parts[2])
+      var pActive = parts.length >= 4 ? parts[3] === "1" : false
+      if (pName !== "" && savedProfiles.length < 50) {
+        savedProfiles.push({ name: pName, ssid: pSsid !== "" ? pSsid : pName, active: pActive })
+      }
     } else if (parts[0] === "net" && parts.length >= 6) {
+      sawNetLine = true
       ssid = sanitizeSsid(parts[1])
       netType = sanitizeText(parts[2])
       netIp = sanitizeText(parts[3])
@@ -128,9 +202,15 @@ function parseStatus(text, root) {
     } else if (parts[0] === "netdns" && parts.length >= 2) {
       dnsCurrent = sanitizeText(parts[1] || "")
     } else if (parts[0] === "data" && parts.length >= 4) {
+      // data <sessionRx> <sessionTx> <todayRx> <todayTx> <iface>
+      // Session counters come from /sys/class/net (since boot, matches btop);
+      // today is vnstat's daily total. Either pair may be blank.
       dataRx = sanitizeText(parts[1])
       dataTx = sanitizeText(parts[2])
-      dataSource = sanitizeText(parts[3])
+      dataTodayRx = (parts.length >= 5) ? sanitizeText(parts[3]) : ""
+      dataTodayTx = (parts.length >= 6) ? sanitizeText(parts[4]) : ""
+      dataIface = (parts.length >= 6) ? sanitizeText(parts[5]) : ""
+      dataSource = dataTodayRx !== "" ? "both" : "session"
     } else if (parts[0] === "fw" && parts.length >= 3) {
       fwActive = parts[1] === "1"
       fwRules = Math.max(0, Math.min(parseInt(parts[2], 10) || 0, 9999))
@@ -163,14 +243,21 @@ function parseStatus(text, root) {
   root.exitNodeIp = exitNodeIp
   root.exitNodeId = exitNodeId
   root.peers = peers
-  root.wifiNetworks = wifiNetworks
-  root.ssid = ssid
-  root.netType = netType
-  root.netIp = netIp
-  root.signal = signal
-  root.metered = metered
-  root.gateway = gateway
-  root.wifiRadio = wifiRadio
+  // The panel derives `wifiNetworks` from the native Networking service and
+  // uses these polled rows only for security type and as a fallback.
+  root.polledNetworks = mergeWifiList(wifiNetworks, savedProfiles)
+  root.savedProfiles = savedProfiles
+  // Connection identity now comes from the native Networking service, so the
+  // polled values are only retained as fallbacks for the details it cannot
+  // report. Never overwrite the live bindings: assigning to a readonly
+  // property is a QML error.
+  if (sawNetLine) {
+    root.polledSsid = ssid
+    root.polledIp = netIp
+    root.signalFallback = signal
+    root.metered = metered
+    root.gateway = gateway
+  }
   root.netIface = netIface
   root.netFreq = netFreq
   root.netBitrate = netBitrate
@@ -183,11 +270,15 @@ function parseStatus(text, root) {
   root.dnsCurrent = dnsCurrent
   root.dataRx = dataRx
   root.dataTx = dataTx
+  root.dataTodayRx = dataTodayRx
+  root.dataTodayTx = dataTodayTx
+  root.dataIface = dataIface
   root.dataSource = dataSource
   root.fwActive = fwActive
   root.fwRules = fwRules
   root.fwRuleList = fwRuleList
   root.statusFresh = true
+  root.statusAt = Date.now()
 }
 
 function typeLabel(type) {
@@ -244,6 +335,24 @@ function isSecured(security) {
   return s !== "" && s !== "--" && s !== "none"
 }
 
+// True when a connection failure looks like a rejected/absent passphrase
+// rather than, say, a DHCP or out-of-range problem. NetworkManager reports a
+// failed WPA 4-way handshake as "Secrets were required, but not provided", so
+// that phrasing covers both a changed password and a locked keyring.
+function isWifiAuthError(message) {
+  var s = String(message || "").toLowerCase()
+  if (s === "") return false
+  return s.indexOf("secrets were required") !== -1
+    || s.indexOf("no secrets") !== -1
+    || s.indexOf("psk") !== -1
+    || s.indexOf("pre-shared key") !== -1
+    || s.indexOf("handshake") !== -1
+    || s.indexOf("4-way") !== -1
+    || s.indexOf("wrong password") !== -1
+    || s.indexOf("invalid password") !== -1
+    || s.indexOf("authentication") !== -1
+}
+
 function wifiSecurityIcon(security) {
   return isSecured(security) ? "󰌾" : ""
 }
@@ -253,12 +362,14 @@ if (typeof module !== "undefined") {
     sanitizeText: sanitizeText,
     sanitizeSsid: sanitizeSsid,
     parseStatus: parseStatus,
+    mergeWifiList: mergeWifiList,
     typeLabel: typeLabel,
     osIcon: osIcon,
     signalIcon: signalIcon,
     barIcon: barIcon,
     formatBand: formatBand,
     isSecured: isSecured,
+    isWifiAuthError: isWifiAuthError,
     wifiSecurityIcon: wifiSecurityIcon
   }
 }

@@ -68,19 +68,29 @@ else
 fi
 
 # ---------- network ----------
+# Connection identity (SSID, IP, connected state, radio) now comes from
+# Quickshell's Networking service in the panel, straight from NetworkManager
+# over D-Bus. Only the extras Networking cannot report are gathered here:
+# frequency, the Wi-Fi scan list, and a signal fallback.
 dev_status=$(timeout 2 nmcli -t -f DEVICE,TYPE,STATE dev status 2>/dev/null)
-active=$(echo "$dev_status" | awk -F: '$3 ~ /^connected/ && ($2=="wifi" || $2=="ethernet") {print $1; exit}')
-[ -z "$active" ] && active=$(echo "$dev_status" | awk -F: '$3 ~ /^connected/ && $2 != "loopback" {print $1; exit}')
+# Only real network devices count. The old fallback accepted any connected
+# device except loopback, so a disconnected Wi-Fi box reported "tailscale0"
+# (a tun device) as its active link and the panel showed a bogus connection.
+# VPN, bridge and tun devices are never the answer here.
+active=$(echo "$dev_status" | awk -F: '$3 ~ /^connected/ && $2 == "wifi" {print $1; exit}')
+[ -z "$active" ] && active=$(echo "$dev_status" | awk -F: '$3 ~ /^connected/ && $2 == "ethernet" {print $1; exit}')
 ssid=""; type=""; ip=""; signal=""; metered=0; freq=""
 if [ -n "$active" ]; then
-  type=$(timeout 2 nmcli -t -f GENERAL.TYPE device show "$active" 2>/dev/null | head -n 1 | cut -d: -f2 | head -c 32)
+  ssid=$(timeout 2 nmcli -t -f GENERAL.CONNECTION device show "$active" 2>/dev/null | head -n 1 | cut -d: -f2- | head -c 128)
+  ssid=$(strip_delims "$ssid")
   ip=$(timeout 2 nmcli -t -f IP4.ADDRESS device show "$active" 2>/dev/null | head -n 1 | cut -d: -f2 | cut -d/ -f1 | head -c 64)
   timeout 2 nmcli -t -f GENERAL.METERED device show "$active" 2>/dev/null | grep -q "^GENERAL.METERED:yes" && metered=1
+  type=$(timeout 2 nmcli -t -f DEVICE,TYPE dev status 2>/dev/null | awk -F: -v d="$active" '$1==d {print $2; exit}' | head -c 32)
   if [ "$type" = "wifi" ]; then
-    ssid=$(timeout 2 nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | grep "^yes:" | head -n 1 | sed 's/^yes://' | sed 's/\\:/:/g' | head -c 128)
-    ssid=$(strip_delims "$ssid")
-    signal=$(timeout 2 nmcli -t -f ACTIVE,SIGNAL dev wifi 2>/dev/null | grep "^yes:" | head -n 1 | cut -d: -f2 | head -c 16)
-    freq=$(timeout 2 nmcli -t -f ACTIVE,FREQ dev wifi 2>/dev/null | grep "^yes:" | head -n 1 | cut -d: -f2 | head -c 32)
+    # One call for the in-use access point instead of three.
+    ap=$(timeout 2 nmcli -t -f IN-USE,SIGNAL,FREQ dev wifi list --rescan no 2>/dev/null | grep '^\*' | head -n 1)
+    signal=$(printf '%s' "$ap" | awk -F: '{print $2}' | head -c 16)
+    freq=$(printf '%s' "$ap" | awk -F: '{print $3}' | head -c 32)
   fi
 fi
 
@@ -89,14 +99,20 @@ wifi_radio=0
 [[ "$(timeout 2 nmcli radio wifi 2>/dev/null)" == "enabled" ]] && wifi_radio=1
 
 printf 'net\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ssid" "$(strip_delims "$type")" "$(strip_delims "$ip")" "$signal" "$metered" "$(strip_delims "$gateway")" "$wifi_radio" "$(strip_delims "$active")" "$(strip_delims "$freq")"
-
-# ---------- wifi scan (when wifi radio is enabled and disconnected) ----------
-if [ "$wifi_radio" -eq 1 ] && [ -z "$ssid" ]; then
-  uuids=$(timeout 2 nmcli -t -f UUID,TYPE connection show 2>/dev/null | awk -F: '$2 ~ /^(802-11-wireless|wifi)$/ {print $1}')
+# ---------- wifi scan ----------
+# Scanned even while connected: the panel shows one unified list where saved
+# profiles sit on top and nearby unsaved networks follow.
+if [ "$wifi_radio" -eq 1 ]; then
+  # `nmcli ... connection show uuid` takes exactly one UUID, so the profiles are
+  # walked individually; passing several in one call used to return nothing and
+  # silently drop every "Saved" badge once more than one Wi-Fi profile existed.
   saved_ssids=""
-  if [ -n "$uuids" ]; then
-    saved_ssids=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show $uuids 2>/dev/null | sed '/^$/d')
-  fi
+  uuids=$(timeout 2 nmcli -t -f UUID,TYPE connection show 2>/dev/null | awk -F: '$2 ~ /^(802-11-wireless|wifi)$/ {print $1}')
+  for uuid in $uuids; do
+    s=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show uuid "$uuid" 2>/dev/null | sed '/^$/d')
+    [ -n "$s" ] && saved_ssids+="${s//\\:/:}"$'\n'
+  done
+  saved_ssids=$(printf '%s' "$saved_ssids" | tr -d '\r' | sed '/^$/d')
   saved_names=$(timeout 2 nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '
     $NF ~ /^(802-11-wireless|wifi)$/ {
       name = $1
@@ -149,6 +165,32 @@ if [ "$wifi_radio" -eq 1 ] && [ -z "$ssid" ]; then
   }'
 fi
 
+# ---------- saved Wi-Fi profiles (always listed so they can be forgotten) ----------
+# One row per saved Wi-Fi connection: profile name, SSID, and whether it is the
+# active one. Emitted regardless of connection state, because the scan list
+# below only exists while disconnected and forget must work when connected.
+saved_profiles=$(timeout 4 nmcli -t -f UUID,TYPE,NAME,ACTIVE connection show 2>/dev/null | awk -F: '
+  $2 ~ /^(802-11-wireless|wifi)$/ {
+    active = $NF
+    name = $3
+    for (i = 4; i < NF; i++) name = name ":" $i
+    gsub(/\\:/, ":", name)
+    print $1 "\t" name "\t" active
+  }
+')
+if [ -n "$saved_profiles" ]; then
+  while IFS=$'\t' read -r p_uuid p_name p_active; do
+    [ -z "$p_uuid" ] && continue
+    p_ssid=$(timeout 2 nmcli -g 802-11-wireless.ssid connection show uuid "$p_uuid" 2>/dev/null | head -n 1)
+    p_ssid=${p_ssid//\\:/:}
+    [ -z "$p_ssid" ] && p_ssid="$p_name"
+    p_active_flag=0
+    [ "$p_active" = "yes" ] && p_active_flag=1
+    printf 'wifsaved\t%s\t%s\t%s\n' \
+      "$(strip_delims "$p_name")" "$(strip_delims "$p_ssid")" "$p_active_flag"
+  done <<< "$saved_profiles"
+fi
+
 # ---------- network diagnostics (from omarchy-network-status) ----------
 if command -v omarchy-network-status >/dev/null 2>&1; then
   net_verbose=$(timeout 3 omarchy-network-status --verbose 2>/dev/null | head -c 4096)
@@ -174,42 +216,60 @@ if command -v omarchy-dns >/dev/null 2>&1; then
 fi
 
 # ---------- data usage ----------
+# Two separate metrics, deliberately:
+#   session  = /sys/class/net counters, i.e. "since boot". This is what btop
+#              and `omarchy-network-status` report, so the numbers agree.
+#   today    = vnstat's daily total, which survives reboots.
+# Emitting both keeps the panel honest about which is which.
+data_iface="$active"
+if [ -z "$data_iface" ]; then
+  data_iface=$(timeout 2 ip route show default 2>/dev/null | awk '{print $5}' | head -n 1)
+fi
+
+session_rx=0
+session_tx=0
+if [ -n "$data_iface" ]; then
+  session_rx=$(cat "/sys/class/net/$data_iface/statistics/rx_bytes" 2>/dev/null)
+  session_tx=$(cat "/sys/class/net/$data_iface/statistics/tx_bytes" 2>/dev/null)
+fi
+case "$session_rx" in ''|*[!0-9]*) session_rx=0 ;; esac
+case "$session_tx" in ''|*[!0-9]*) session_tx=0 ;; esac
+
+today_rx=""
+today_tx=""
 if command -v vnstat >/dev/null 2>&1; then
-  viface="${active:-$(timeout 2 ip route show default 2>/dev/null | awk '{print $5}' | head -n 1 | head -c 64)}"
-  viface="${viface:-$(timeout 3 vnstat --oneline 2>/dev/null | head -n 1 | cut -d\; -f2 | head -c 64 | xargs)}"
+  viface="$data_iface"
   vn_cmd=(vnstat -d 1 --json)
   [ -n "$viface" ] && vn_cmd+=( -i "$viface" )
   vn_json=$("${vn_cmd[@]}" 2>/dev/null | head -c 1048576)
-  rx=$(echo "$vn_json" | jq -r '((.interfaces[0].traffic.day[-1] // {}) | .rx // 0)' 2>/dev/null)
-  tx=$(echo "$vn_json" | jq -r '((.interfaces[0].traffic.day[-1] // {}) | .tx // 0)' 2>/dev/null)
-  case "$rx" in ''|*[!0-9]*) rx=0 ;; esac
-  case "$tx" in ''|*[!0-9]*) tx=0 ;; esac
-  printf 'data\t%s\t%s\tvnstat\n' "$(human "${rx:-0}")" "$(human "${tx:-0}")"
+  today_rx=$(echo "$vn_json" | jq -r '((.interfaces[0].traffic.day[-1] // {}) | .rx // 0)' 2>/dev/null)
+  today_tx=$(echo "$vn_json" | jq -r '((.interfaces[0].traffic.day[-1] // {}) | .tx // 0)' 2>/dev/null)
+  case "$today_rx" in ''|*[!0-9]*) today_rx=0 ;; esac
+  case "$today_tx" in ''|*[!0-9]*) today_tx=0 ;; esac
+fi
 
-  # daily cap alert (cap file: bytes as integer)
+printf 'data\t%s\t%s\t%s\t%s\t%s\n' \
+  "$(human "$session_rx")" "$(human "$session_tx")" \
+  "$([ -n "$today_rx" ] && human "$today_rx" || echo '')" \
+  "$([ -n "$today_tx" ] && human "$today_tx" || echo '')" \
+  "$(strip_delims "$data_iface")"
+
+# daily cap alert (cap file: bytes as integer), based on vnstat's daily total
+if [ -n "$today_rx" ]; then
   cap_file="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/link-data-cap"
   state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
   if [ -f "$cap_file" ]; then
     cap=$(head -c 32 "$cap_file" 2>/dev/null)
     case "$cap" in *[!0-9]*) cap=0 ;; esac
-    if [ "$cap" -gt 0 ] && [ $((rx + tx)) -ge "$cap" ] && [ ! -f "$state_dir/link-cap-notified" ]; then
+    day_total=$((today_rx + today_tx))
+    if [ "$cap" -gt 0 ] && [ "$day_total" -ge "$cap" ] && [ ! -f "$state_dir/link-cap-notified" ]; then
       mkdir -p "$state_dir"
       touch "$state_dir/link-cap-notified"
-      omarchy notification send -u critical -g 󰌗 "Data cap reached" "$(human $((rx + tx))) used today"
-    elif [ $((rx + tx)) -lt "$cap" ] && [ -f "$state_dir/link-cap-notified" ]; then
+      omarchy notification send -u critical -g 󰌗 "Data cap reached" "$(human "$day_total") used today"
+    elif [ "$day_total" -lt "$cap" ] && [ -f "$state_dir/link-cap-notified" ]; then
       rm -f "$state_dir/link-cap-notified"
     fi
   fi
-else
-  rx=0; tx=0
-  while read -r iface rest; do
-    case "$iface" in wl*|enp*|eth*|wlan*)
-      rx=$((rx + $(echo "$rest" | awk '{print $1}')))
-      tx=$((tx + $(echo "$rest" | awk '{print $9}')))
-      ;;
-    esac
-  done < <(tail -n +3 /proc/net/dev 2>/dev/null | sed 's/://')
-  printf 'data\t%s\t%s\tproc\n' "$(human "$rx")" "$(human "$tx")"
 fi
 
 # ---------- firewall ----------

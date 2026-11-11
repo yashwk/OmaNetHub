@@ -28,12 +28,15 @@ Combines Wi-Fi controls, DNS/band management, signal & latency diagnostics, Tail
 
 ### Network
 - Wi-Fi radio toggle, restart, and QR code (via `omarchy.wifiqr`)
+- Live connection state from Quickshell's native `Networking` service (NetworkManager over D-Bus, signal-driven — no polling flicker)
+- One unified network list: active network first, then saved networks by signal, then nearby networks; saved networks carry a `Saved` badge and out-of-range ones are hidden
+- In-place credential management for saved networks: update the password (rewrites the PSK on every matching profile) or forget the profile (with confirmation); a failed connection that looks like an auth error opens the password field automatically
 - Wi-Fi discovery when offline: nearby networks with signal, security, and saved-state badges, auto-connect to known networks, inline password entry with error reporting, rescan and disconnect actions
-- Connected SSID, interface, frequency/band, signal strength, bitrate, and latency (router + internet ping via `omarchy-network-status`)
+- Connected SSID, interface, frequency/band, signal strength, bitrate, and latency (router + internet ping via `omarchy-network-status`), laid out in two columns to save vertical space
 - Local IP / gateway display with one-click copy to clipboard (`wl-copy`)
 - Wi-Fi band steering: Auto / 2.4 GHz / 5 GHz (via `omarchy-network-band`)
 - DNS provider presets: DHCP, Cloudflare, Google, Mullvad, Custom (via `omarchy-dns`)
-- Daily data usage (Down/Up via `vnstat` or `/proc/net/dev`)
+- Data usage in two clearly labelled metrics: **session** totals since boot (interface counters, matches `btop`) and **today** totals from `vnstat` (survives reboots)
 - Speed test summon (via `omarchy.speedtest`)
 
 ### Tailnet (Tailscale)
@@ -125,7 +128,7 @@ To install or remove the "Send via Taildrop" right-click extension in Nautilus:
 - `jq` (parsing `tailscale` JSON in `status.sh`)
 - `wl-copy` (clipboard copy)
 - `nmcli` / NetworkManager (network state, optional helpers: `omarchy-network-status`, `omarchy-network-band`, `omarchy-dns`, `omarchy-wifiqr`, `omarchy.speedtest`)
-- `vnstat` (optional, nicer daily usage; falls back to `/proc/net/dev`)
+- `vnstat` (optional; adds the "today" data usage total and daily cap alerts, session totals come from `/sys/class/net` either way)
 - `ufw` (optional, Firewall tab)
 - `xdg-open` (admin console link)
 - GNOME Files + `nautilus-python` (optional, for context menu)
